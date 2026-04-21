@@ -1,5 +1,4 @@
 import { makeAIJsonCompletion } from './multi-groq';
-import { generateEmbedding } from './local-embedder';
 import prisma from '@/lib/db/prisma';
 
 export interface FactExtractionResult {
@@ -51,13 +50,14 @@ export async function backgroundMemoryExtraction(params: {
       return; // Nothing to remember
     }
 
-    // 2. Loop through each extracted fact, generate Xenova vector, and insert to Prisma
+    // 2. Loop through each extracted fact, generate embedding vector, and insert to Prisma
     for (const item of extraction.facts) {
       console.log(`[Memory Extractor] Learned: "${item.fact}" (isGlobal: ${item.isGlobal})`);
 
       const embedTimer = Date.now();
+      const { generateEmbedding } = await import('./local-embedder');
       const vector = await generateEmbedding(item.fact);
-      console.log(`[Memory Extractor] Local Embedding took ${Date.now() - embedTimer}ms (384 dimensions)`);
+      console.log(`[Memory Extractor] Gemini Embedding took ${Date.now() - embedTimer}ms (768 dimensions)`);
 
       // Cast the number[] directly to string format PGVector accepts: '[0.1, 0.2, ...]'
       // To prevent SQL injection we pass the raw string into a ::vector cast safely,

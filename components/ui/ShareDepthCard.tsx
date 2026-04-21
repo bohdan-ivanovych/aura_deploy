@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Share2, Download, X, Anchor, Trophy, Flame } from 'lucide-react';
-import { toPng } from 'html-to-image';
+
 
 interface ShareDepthCardProps {
   name: string;
@@ -33,6 +33,7 @@ export function ShareDepthCard({ name, rank, level, depth, streak, onClose }: Sh
     if (!cardRef.current || saving) return;
     setSaving(true);
     try {
+      const { toPng } = await import('html-to-image');
       const dataUrl = await toPng(cardRef.current, {
         pixelRatio: 3,
         cacheBust: true,

@@ -6,7 +6,7 @@ import { ArrowLeft, Check, X, Brain, Skull } from 'lucide-react';
 import Link from 'next/link';
 import { binaryReviewFlashcard } from '@/app/actions/flashcard';
 import { haptics } from '@/lib/utils/haptics';
-import confetti from 'canvas-confetti';
+
 
 export default function LearnModeClient({ deckId, deckTitle, cards: initialCards }: any) {
   // Sort cards randomly, prioritize zombies (errorCount >= 3)
@@ -83,7 +83,7 @@ export default function LearnModeClient({ deckId, deckTitle, cards: initialCards
     if (correct) {
       haptics.success();
       if (isZombie) {
-         confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
+         import('canvas-confetti').then((mod) => mod.default({ particleCount: 50, spread: 60, origin: { y: 0.8 } }));
       }
     } else {
       haptics.error();

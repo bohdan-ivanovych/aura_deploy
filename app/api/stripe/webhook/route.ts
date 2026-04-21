@@ -57,18 +57,29 @@ export async function POST(req: NextRequest) {
         const userId = session.metadata?.userId ?? session.client_reference_id
         const customerId = session.customer as string
         if (userId && customerId) {
-          // Save customerId AND eagerly set plan=pro.
-          // The subscription webhook will confirm this, but doing it here too
-          // ensures Pro access is instant even if the subscription event is delayed.
+          // Capture real email from Stripe checkout — CRITICAL for subscription
+          // recovery after cookie loss. Without this, email stays as {uuid}@aura.os
+          // and the user permanently loses Pro when cookies clear.
+          const realEmail = session.customer_details?.email
+          const currentUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { email: true },
+          })
+          const shouldUpdateEmail =
+            realEmail && currentUser?.email?.endsWith('@aura.os')
+
           await prisma.user.update({
             where: { id: userId },
             data: {
               stripeCustomerId: customerId,
               plan: 'pro',
               subscriptionStatus: 'active',
+              ...(shouldUpdateEmail ? { email: realEmail } : {}),
             },
           })
-          await trackServer(userId, 'checkout_completed')
+          await trackServer(userId, 'checkout_completed', {
+            emailCaptured: !!shouldUpdateEmail,
+          })
         }
         break
       }

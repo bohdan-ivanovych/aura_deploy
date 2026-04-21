@@ -439,7 +439,7 @@ model UserMemory {
   persona   Persona? @relation(fields: [personaId], references: [id], onDelete: Cascade)
   content   String
   isGlobal  Boolean  @default(false)
-  embedding Unsupported("vector(384)")?
+  embedding Unsupported("vector(768)")?
   fts       Unsupported("tsvector")? // We will populate via generated column / trigger in raw SQL
   createdAt DateTime @default(now())
 

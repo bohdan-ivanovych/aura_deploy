@@ -19,6 +19,7 @@ export async function GET() {
         referralCode: (user as any).referralCode ?? null,
         stealthInjectVocab: (user as any).stealthInjectVocab ?? false,
         stealthInjectGrammar: (user as any).stealthInjectGrammar ?? false,
+        email: user.email,
       },
     });
   } catch (error) {
@@ -60,6 +61,19 @@ export async function POST(req: Request) {
       }
     }
 
+    if (typeof body.email === 'string') {
+      const rawEmail = body.email.trim().toLowerCase();
+      if (rawEmail && rawEmail !== user.email && !rawEmail.endsWith('@aura.os')) {
+        if (!rawEmail.includes('@') || !rawEmail.includes('.')) {
+          return NextResponse.json({ error: 'Invalid email address format.' }, { status: 400 });
+        }
+        const taken = await prisma.user.findFirst({ where: { email: rawEmail } });
+        if (taken && taken.id !== user.id) {
+          return NextResponse.json({ error: 'This email is already associated with another account.' }, { status: 400 });
+        }
+      }
+    }
+
     const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -78,6 +92,8 @@ export async function POST(req: Request) {
         ...(typeof body.name === 'string' && body.name.trim() ? { name: body.name.trim() } : {}),
         ...(typeof body.stealthInjectVocab === 'boolean' ? { stealthInjectVocab: body.stealthInjectVocab } : {}),
         ...(typeof body.stealthInjectGrammar === 'boolean' ? { stealthInjectGrammar: body.stealthInjectGrammar } : {}),
+        // Fallback for types because Prisma might not know about email yet 
+        ...(typeof body.email === 'string' ? { email: body.email.trim().toLowerCase() } : {}),
       } as any,
     });
 

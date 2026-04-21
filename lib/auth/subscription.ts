@@ -9,6 +9,7 @@ export async function checkMessageLimit(userId: string): Promise<{
   allowed: boolean
   remaining: number
   isPro: boolean
+  resetAt: string | null
 }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -19,8 +20,13 @@ export async function checkMessageLimit(userId: string): Promise<{
     },
   })
 
-  if (!user) return { allowed: false, remaining: 0, isPro: false }
-  if (user.plan === 'pro') return { allowed: true, remaining: 999, isPro: true }
+  // Helper: midnight tonight (start of next day) for countdown
+  const nextMidnight = new Date()
+  nextMidnight.setHours(24, 0, 0, 0)
+  const resetAt = nextMidnight.toISOString()
+
+  if (!user) return { allowed: false, remaining: 0, isPro: false, resetAt }
+  if (user.plan === 'pro') return { allowed: true, remaining: 999, isPro: true, resetAt: null }
 
   const isNewDay =
     new Date(user.dailyMessageResetAt).toISOString().split('T')[0] !== new Date().toISOString().split('T')[0]
@@ -30,11 +36,11 @@ export async function checkMessageLimit(userId: string): Promise<{
       where: { id: userId },
       data: { dailyMessageCount: 0, dailyMessageResetAt: new Date() },
     })
-    return { allowed: true, remaining: FREE_LIMITS.messagesPerDay, isPro: false }
+    return { allowed: true, remaining: FREE_LIMITS.messagesPerDay, isPro: false, resetAt }
   }
 
   const remaining = FREE_LIMITS.messagesPerDay - user.dailyMessageCount
-  return { allowed: remaining > 0, remaining, isPro: false }
+  return { allowed: remaining > 0, remaining, isPro: false, resetAt }
 }
 
 export async function requirePro(userId: string): Promise<boolean> {

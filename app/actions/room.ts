@@ -2,7 +2,7 @@
 
 import prisma from '@/lib/db/prisma';
 import { getGroqClient, GROQ_MODEL } from '@/lib/ai/groq';
-import { pusher } from '@/lib/services/pusher';
+
 import { parseAIReply } from '@/lib/ai/ai-utils';
 import {
   INJECTION_GUARD,
@@ -56,7 +56,9 @@ export async function sendRoomMessage(
     },
   });
 
-  await pusher?.trigger(`room-${roomId}`, 'new-message', message);
+  const { getPusherServer } = await import('@/lib/services/pusher');
+  const pusherInstance = await getPusherServer();
+  await pusherInstance?.trigger(`room-${roomId}`, 'new-message', message);
 
   const history = await prisma.message.findMany({
     where: { roomId },
@@ -99,7 +101,7 @@ export async function sendRoomMessage(
       },
     });
 
-    await pusher?.trigger(`room-${roomId}`, 'new-message', aiMessage);
+    await pusherInstance?.trigger(`room-${roomId}`, 'new-message', aiMessage);
 
     return { success: true, message: aiMessage };
   } catch (error) {

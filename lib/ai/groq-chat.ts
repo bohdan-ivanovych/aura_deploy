@@ -162,6 +162,8 @@ export interface AIResponse {
   vocabScore?: number;
   complexityScore?: number;
   fluencyScore?: number;
+  grammarScore?: number;
+  accuracyScore?: number;
   userLevel?: string | null;
   completedQuestIds?: string[];
 }

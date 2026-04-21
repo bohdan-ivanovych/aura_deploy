@@ -186,13 +186,15 @@ export async function POST(req: Request) {
           }));
 
         // ── Daily message limit (free tier gate) ───────────────────────────
-        const { allowed: msgAllowed } = await checkMessageLimit(finalUser.id);
+        const { allowed: msgAllowed, resetAt } = await checkMessageLimit(finalUser.id);
         if (!msgAllowed) {
           send({
             type: "error",
             error: "DAILY_LIMIT_REACHED",
+            limitReached: true,
             remaining: 0,
             isPro: false,
+            resetAt,
             message:
               "You've reached your 20 messages for today. Upgrade to Aura Pro for unlimited chats.",
           });
@@ -811,6 +813,27 @@ export async function POST(req: Request) {
           completedUserQuests.map((q) => q.questId),
         );
 
+        // PRE-FETCH DATA ONCE FOR ALL QUEST EVALUATIONS
+        const [recentAIMessages, userSessions] = await Promise.all([
+          prisma.message.findMany({
+            where: { chatSessionId: session.id, sender: "AI" },
+            orderBy: { createdAt: "desc" },
+            take: 5,
+          }),
+          prisma.sessionParticipant.findMany({
+            where: { userId: finalUser.id },
+            select: { sessionId: true },
+          }),
+        ]);
+        const userSessionIds = userSessions.map(s => s.sessionId);
+        
+        const userMsgCountToday = await prisma.message.count({
+          where: { chatSessionId: { in: userSessionIds }, sender: "USER", createdAt: { gte: todayStart } },
+        });
+
+        const last3AI = recentAIMessages.slice(0, 3);
+        const last5AI = recentAIMessages;
+
         const newlyCompletedQuests: string[] = [];
         let questXpGain = 0;
 
@@ -823,20 +846,10 @@ export async function POST(req: Request) {
 
           // ── GRAMMAR ──
           if (title === "Flawless 5") {
-            const last5 = await prisma.message.findMany({
-              where: { chatSessionId: session.id, sender: "AI" },
-              orderBy: { createdAt: "desc" },
-              take: 5,
-            });
-            if (last5.length === 5 && last5.every((m: any) => !m.weaknessIdentified))
+            if (last5AI.length === 5 && last5AI.every((m: any) => !m.weaknessIdentified))
               isCompleted = true;
           } else if (title === "Article Ace") {
-            const last3 = await prisma.message.findMany({
-              where: { chatSessionId: session.id, sender: "AI" },
-              orderBy: { createdAt: "desc" },
-              take: 3,
-            });
-            if (last3.length === 3 && last3.every((m: any) => !m.weaknessIdentified?.toLowerCase().includes("article")))
+            if (last3AI.length === 3 && last3AI.every((m: any) => !m.weaknessIdentified?.toLowerCase().includes("article")))
               isCompleted = true;
           } else if (title === "Past Perfect Pro") {
             if (strengthIdentified?.toLowerCase().includes("past perfect") ||
@@ -874,26 +887,13 @@ export async function POST(req: Request) {
           } else if (title === "Eloquence") {
             if (fluencyScore != null && fluencyScore >= 80 && complexityScore != null && complexityScore >= 80) isCompleted = true;
           } else if (title === "Natural Flow") {
-            const last3AI = await prisma.message.findMany({
-              where: { chatSessionId: session.id, sender: "AI" },
-              orderBy: { createdAt: "desc" },
-              take: 3,
-            });
             if (last3AI.length === 3 && last3AI.every((m: any) => !m.weaknessIdentified))
               isCompleted = true;
 
           // ── CONSISTENCY ──
           } else if (title === "Depth Diver" || title === "Marathon" || title === "Warm Up") {
-            // Count across ALL sessions today (not just the current chat)
-            const userSessionIds = (await prisma.sessionParticipant.findMany({
-              where: { userId: finalUser.id },
-              select: { chatSessionId: true },
-            })).map((s: any) => s.chatSessionId);
-            const count = await prisma.message.count({
-              where: { chatSessionId: { in: userSessionIds }, sender: "USER", createdAt: { gte: todayStart } },
-            });
             const target = title === "Marathon" ? 15 : title === "Depth Diver" ? 10 : 3;
-            if (count >= target) isCompleted = true;
+            if (userMsgCountToday >= target) isCompleted = true;
           } else if (title === "Streak Builder") {
             if (currentStreak >= 2) isCompleted = true;
           } else if (title === "Error Crusher") {
@@ -918,14 +918,7 @@ export async function POST(req: Request) {
             if (sanitizedText.match(/\b(disagree|but i think|however|actually|on the contrary)\b/i))
               isCompleted = true;
           } else if (title === "Deep Dive") {
-            const userSessionIds2 = (await prisma.sessionParticipant.findMany({
-              where: { userId: finalUser.id },
-              select: { chatSessionId: true },
-            })).map((s: any) => s.chatSessionId);
-            const userMsgCount = await prisma.message.count({
-              where: { chatSessionId: { in: userSessionIds2 }, sender: "USER", createdAt: { gte: todayStart } },
-            });
-            if (userMsgCount >= 8) isCompleted = true;
+            if (userMsgCountToday >= 8) isCompleted = true;
           }
 
           if (isCompleted) {
@@ -935,14 +928,15 @@ export async function POST(req: Request) {
         }
 
         if (newlyCompletedQuests.length > 0) {
-          for (const qid of newlyCompletedQuests) {
+          const questUpdates = newlyCompletedQuests.map(async (qid) => {
             const existingUQ = await prisma.userQuest.findFirst({ where: { userId: finalUser.id, questId: qid } });
             if (existingUQ) {
-              await prisma.userQuest.update({ where: { id: existingUQ.id }, data: { completed: true, completedAt: now } });
+              return prisma.userQuest.update({ where: { id: existingUQ.id }, data: { completed: true, completedAt: now } });
             } else {
-              await prisma.userQuest.create({ data: { userId: finalUser.id, questId: qid, completed: true, completedAt: now } });
+              return prisma.userQuest.create({ data: { userId: finalUser.id, questId: qid, completed: true, completedAt: now } });
             }
-          }
+          });
+          await Promise.all(questUpdates);
         }
 
         // XP awards — base 1 per message, +2 bonus for clean message, +50 for streak milestone.

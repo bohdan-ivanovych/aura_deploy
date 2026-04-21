@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server';
-import webpush from 'web-push';
 import prisma from '@/lib/db/prisma';
 
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY  ?? '';
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY ?? '';
 const VAPID_EMAIL   = process.env.VAPID_EMAIL       ?? 'mailto:admin@aura.app';
-
-if (VAPID_PUBLIC && VAPID_PRIVATE) {
-  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
-}
 
 export interface PushPayload {
   userId: string;
@@ -19,6 +14,9 @@ export interface PushPayload {
 
 export async function sendPushToUser(payload: PushPayload): Promise<void> {
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return;
+
+  const { default: webpush } = await import('web-push');
+  webpush.setVapidDetails(VAPID_EMAIL, VAPID_PUBLIC, VAPID_PRIVATE);
 
   const subs = await (prisma as any).pushSubscription.findMany({
     where: { userId: payload.userId },

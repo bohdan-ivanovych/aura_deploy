@@ -33,7 +33,13 @@ export async function POST(req: Request) {
     if (!limit.allowed) {
       await trackServer(user.id, 'upgrade_prompt_shown', { trigger: 'daily_limit' });
       return new Response(
-        JSON.stringify({ error: 'daily_limit_reached', upgradeRequired: true, remaining: 0 }),
+        JSON.stringify({
+          error: 'daily_limit_reached',
+          limitReached: true,
+          upgradeRequired: true,
+          remaining: 0,
+          resetAt: limit.resetAt,
+        }),
         { status: 402, headers: { 'Content-Type': 'application/json' } }
       );
     }

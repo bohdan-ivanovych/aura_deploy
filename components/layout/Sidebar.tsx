@@ -157,13 +157,13 @@ export function Sidebar() {
                 : pathname.startsWith(item.href);
             const colors = NAV_COLORS[item.href] || NAV_COLORS['/'];
 
-            const handleNavigation = (e: React.MouseEvent<HTMLDivElement>) => {
+            const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>) => {
               if (isTab) {
                 e.preventDefault();
                 window.history.pushState(null, '', item.href);
                 setActiveTab(item.href as TabRoute);
               } else {
-                router.push(item.href);
+                // Link component handles its own navigation if we don't preventDefault
               }
             };
 

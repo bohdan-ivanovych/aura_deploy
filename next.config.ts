@@ -6,7 +6,7 @@ const isDev = process.env.NODE_ENV !== 'production';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  serverExternalPackages: ['@xenova/transformers'],
+  serverExternalPackages: [],
 
   experimental: {
     /* WHY: Tree-shakes barrel exports (index.ts files) of these packages,
