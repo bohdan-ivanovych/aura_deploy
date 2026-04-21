@@ -1,0 +1,448 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+enum RoomStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+  PAUSED
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+model User {
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  username             String?              @unique
+  name                 String?
+  nativeLanguage       String               @default("uk")
+  cardPreference       String               @default("both")
+  explanationLanguage  String               @default("native")
+  magicWord            String               @default("explain")
+  targetAccent         String               @default("us")
+  xp                   Int                  @default(0)
+  currentHP            Int                  @default(100)
+  diveDepth            Int                  @default(0)
+  maxDiveDepth         Int                  @default(0)
+  personalBestDepth    Int                  @default(0)
+  streak               Int                  @default(0)
+  lastStreakAt         DateTime?
+  avgVocabulary        Int                  @default(50)
+  avgComplexity        Int                  @default(50)
+  avgFluency           Int                  @default(50)
+  avgGrammar           Int                  @default(50)
+  avgAccuracy          Int                  @default(50)
+  lastActiveAt         DateTime             @default(now())
+  ghostedAt            DateTime?
+  detectedLevel        String?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  stealthInjectVocab   Boolean              @default(false)
+  stealthInjectGrammar Boolean              @default(false)
+  plan                 String               @default("free")
+  stripeCustomerId     String?              @unique
+  stripeSubscriptionId String?              @unique
+  subscriptionStatus   String?
+  dailyMessageCount    Int                  @default(0)
+  dailyMessageResetAt  DateTime             @default(now())
+  callMinutesToday     Int                  @default(0)
+  callMinutesResetAt   DateTime             @default(now())
+  referralCode         String?              @unique @default(cuid())
+  referredBy           String?
+  referralCount        Int                  @default(0)
+  chatSessions         SessionParticipant[]
+  flashcards           Flashcard[]
+  decks                Deck[]               @relation("UserDecks")
+  likedDecks           DeckLike[]
+  userQuests           UserQuest[]
+  createdPersonas      Persona[]
+  unlockedNodes        SkillNode[]          @relation("UnlockedNodes")
+  skillProgress        UserSkillProgress[]
+  rooms                RoomMember[]
+  weaknesses           GrammarWeakness[]
+  sentMessages         Message[]            @relation("MessageSenderUser")
+  sentFriendships      Friendship[]         @relation("FriendshipSender")
+  receivedFriendships  Friendship[]         @relation("FriendshipReceiver")
+  bugReports           BugReport[]
+  pushSubscriptions    PushSubscription[]
+  personaBot           Persona?             @relation("PersonaBotUser")
+  learningItems        LearningItem[]
+  memories             UserMemory[]
+}
+
+model SkillNode {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  title         String
+  description   String
+  category      String
+  level         Int         @default(1)
+  xpReward      Int         @default(100)
+  prerequisites SkillNode[] @relation("NodePrerequisites")
+  dependents    SkillNode[] @relation("NodePrerequisites")
+  unlockedBy    User[]      @relation("UnlockedNodes")
+}
+
+model UserSkillProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  nodeSlug  String
+  practiced Int      @default(0)
+  correct   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, nodeSlug])
+  @@index([userId])
+}
+
+model Persona {
+  id           String           @id @default(cuid())
+  name         String
+  description  String
+  avatarUrl    String?
+  systemPrompt String?
+  creatorId    String?
+  creator      User?            @relation(fields: [creatorId], references: [id])
+  isPublic     Boolean          @default(false)
+  category     String           @default("trending")
+  gender       String           @default("neutral")
+  voiceId      String?
+  voiceSettings Json?
+  // Bot user: each persona has its own User record (foundation for multiplayer)
+  botUserId    String?          @unique
+  botUser      User?            @relation("PersonaBotUser", fields: [botUserId], references: [id])
+  sessions     SessionPersona[]
+  sentMessages Message[]        @relation("MessageSenderPersona")
+  // 1:1 sessions directly on ChatSession
+  directSessions ChatSession[]
+  memories     UserMemory[]
+}
+
+// ─── Chat Session ─────────────────────────────────────────────────────────────
+// userId + personaId = 1:1 continuous thread (enforced by unique constraint)
+// SessionParticipant + SessionPersona kept for future group chat (Aura Lobbies)
+
+model ChatSession {
+  id              String               @id @default(cuid())
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @default(now()) @updatedAt
+  // 1:1 direct link for fast lookup + unique enforcement
+  userId          String?
+  personaId       String?
+  persona         Persona?             @relation(fields: [personaId], references: [id])
+  unreadCount     Int                  @default(0)
+  blockedBy       String?
+  blockedAt       DateTime?
+  lastBlocked     String?
+  isPinned        Boolean              @default(false)
+  // Long-term memory: AI-compressed notes updated every 15→25 messages
+  memoryNotes     String?
+  memoryUpdatedAt DateTime?
+  messagesSinceMemory Int              @default(0)
+  messages        Message[]
+  participants    SessionParticipant[]
+  personas        SessionPersona[]
+
+  @@unique([userId, personaId])
+}
+
+// Links human users to a ChatSession (supports group chat)
+model SessionParticipant {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  role      String      @default("member")
+  joinedAt  DateTime    @default(now())
+
+  @@unique([sessionId, userId])
+}
+
+// Links Personas (AI bots) to a ChatSession (supports group chat with multiple AIs)
+model SessionPersona {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  personaId String
+  persona   Persona     @relation(fields: [personaId], references: [id])
+  addedAt   DateTime    @default(now())
+
+  @@unique([sessionId, personaId])
+}
+
+// ─── Friends ─────────────────────────────────────────────────────────────────
+
+model Friendship {
+  id         String       @id @default(cuid())
+  senderId   String
+  sender     User         @relation("FriendshipSender", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User         @relation("FriendshipReceiver", fields: [receiverId], references: [id])
+  status     FriendStatus @default(PENDING)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([senderId, receiverId])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+// ─── Message ─────────────────────────────────────────────────────────────────
+// senderUserId    → human sent
+// senderPersonaId → AI sent (key for multiplayer: "which AI said this?")
+// isHiddenFromChat → saved for LLM context but NOT rendered in UI (call transcripts)
+
+model Message {
+  id                 String        @id @default(cuid())
+  text               String
+  sender             String
+  senderType         String        @default("USER_A")
+  senderUserId       String?
+  senderUser         User?         @relation("MessageSenderUser", fields: [senderUserId], references: [id])
+  senderPersonaId    String?
+  senderPersona      Persona?      @relation("MessageSenderPersona", fields: [senderPersonaId], references: [id])
+  createdAt          DateTime      @default(now())
+  chatSessionId      String?
+  chatSession        ChatSession?  @relation(fields: [chatSessionId], references: [id])
+  grammarCorrection  String?
+  weaknessIdentified String?
+  bonusXP            Boolean       @default(false)
+  edited             Boolean       @default(false)
+  originalText       String?
+  blockedBy          String?
+  errorSpan          Json?
+  stealthTarget      String?
+  // Reaction (local-first, emoji pill below bubble)
+  reaction           String?
+  // Voice / call fields
+  isAudio            Boolean       @default(false)
+  audioDuration      Int?
+  metrics            Json?
+  // Hidden from chat UI but included in LLM context window
+  isHiddenFromChat   Boolean       @default(false)
+  // Room (Grammar Deathmatch) compat
+  roomId             String?
+  room               Room?         @relation(fields: [roomId], references: [id])
+  // Reply chain
+  replyToId          String?
+  replyTo            Message?      @relation("MessageReply", fields: [replyToId], references: [id])
+  replies            Message[]     @relation("MessageReply")
+
+  @@index([chatSessionId])
+  @@index([senderUserId])
+  @@index([senderPersonaId])
+}
+
+model Flashcard {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  deckId             String?
+  deck               Deck?    @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  front              String
+  back               String
+  englishExplanation String?
+  contextSentence    String?
+  type               String   @default("translation")
+  // FSRS Specific Core
+  fsrsState         Int      @default(0) // 0: New, 1: Learning, 2: Review, 3: Relearning
+  fsrsStability     Float    @default(0)
+  fsrsDifficulty    Float    @default(0)
+  fsrsElapsedDays   Int      @default(0)
+  fsrsScheduledDays Int      @default(0)
+  fsrsReps          Int      @default(0)
+  fsrsLapses        Int      @default(0)
+  
+  // Trimodal Fields
+  mistakeSentence   String?
+  correctSentence   String?
+  wrongWord         String?
+  correctWord       String?
+  distractorWord    String?
+  judgeIsCorrect    Boolean  @default(false)
+  
+  nextReview         DateTime @default(now())
+  lastReview         DateTime?
+  isStarred          Boolean  @default(false)
+  status             String   @default("learning") // "learning" or "known"
+  errorCount         Int      @default(0)          // zombie card tracking (>=3 = zombie)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId, nextReview])
+  @@index([deckId])
+}
+
+model Deck {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation("UserDecks", fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  isPublic      Boolean        @default(false)
+  likesCount    Int            @default(0)
+  originalId    String?        // If imported from another deck
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  cards         Flashcard[]
+  likes         DeckLike[]
+  learningItems LearningItem[]
+  
+  @@index([userId])
+  @@index([isPublic])
+}
+
+model DeckLike {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deckId    String
+  deck      Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, deckId])
+  @@index([deckId])
+}
+
+model Quest {
+  id          String      @id @default(cuid())
+  title       String
+  description String
+  xp          Int
+  userQuests  UserQuest[]
+}
+
+model UserQuest {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  questId     String
+  quest       Quest     @relation(fields: [questId], references: [id])
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  @@index([userId])
+}
+
+model Room {
+  id         String       @id @default(cuid())
+  scenarioId String
+  status     RoomStatus   @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  members    RoomMember[]
+  messages   Message[]
+}
+
+model RoomMember {
+  id        String   @id @default(cuid())
+  roomId    String
+  userId    String
+  createdAt DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([roomId, userId])
+}
+
+model GrammarWeakness {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rule      String
+  count     Int      @default(1)
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, rule])
+  @@index([userId])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model BugReport {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  title       String
+  description String
+  severity    String   @default("medium")
+  category    String   @default("other")
+  steps       String?
+  status      String   @default("open")
+  depthReward Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Learning List ────────────────────────────────────────────────────────────
+// Grammar corrections from chat & calls that the user can save and study later.
+
+model LearningItem {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The error
+  original    String   // e.g. "I have went"
+  corrected   String   // e.g. "I have gone"
+  rule        String   // e.g. "Present Perfect"
+  explanation String   // Full explanation / tip
+  // Context
+  sourceType  String   @default("chat") // "chat" | "call"
+  sessionId   String?  // ChatSession id for reference
+  // Optional deck linkage (user can promote to flashcard)
+  deckId      String?
+  deck        Deck?    @relation(fields: [deckId], references: [id], onDelete: SetNull)
+  isPromoted  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, isPromoted])
+}
+
+// ─── Semantic Memory ────────────────────────────────────────────────────────
+// Hybrid RAG memory vectors for long-term personalized recall
+
+model UserMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  personaId String?
+  persona   Persona? @relation(fields: [personaId], references: [id], onDelete: Cascade)
+  content   String
+  isGlobal  Boolean  @default(false)
+  embedding Unsupported("vector(384)")?
+  fts       Unsupported("tsvector")? // We will populate via generated column / trigger in raw SQL
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([personaId])
+}

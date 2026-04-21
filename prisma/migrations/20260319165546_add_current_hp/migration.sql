@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "currentHP" INTEGER NOT NULL DEFAULT 100;

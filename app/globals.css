@@ -1,0 +1,1118 @@
+@import "tailwindcss";
+
+@custom-variant light (&:where(html.light *, .light *));
+@custom-variant dark (&:where(html:not(.light) *, :not(.light) *));
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+  --foreground-muted: rgba(255, 255, 255, 0.55);
+  --foreground-subtle: rgba(255, 255, 255, 0.28);
+
+  /* ── 2026 Fluid Type Scale ───────────────────────────────────────── */
+  --text-xs:   clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);   /* 12–14px */
+  --text-sm:   clamp(0.875rem, 0.8rem + 0.35vw, 1rem);      /* 14–16px */
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);     /* 16–18px */
+  --text-lg:   clamp(1.125rem, 1rem + 0.75vw, 1.5rem);      /* 18–24px */
+  --text-xl:   clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);     /* 24–36px */
+
+  /* ── 4px Spacing Grid ────────────────────────────────────────────── */
+  --space-1: 0.25rem;  --space-2: 0.5rem;  --space-3: 0.75rem;
+  --space-4: 1rem;     --space-6: 1.5rem;  --space-8: 2rem;
+  --space-12: 3rem;    --space-16: 4rem;
+
+  /* ── Radius System ────────────────────────────────────────────────── */
+  --radius-sm:   0.375rem;
+  --radius-md:   0.5rem;
+  --radius-lg:   0.75rem;
+  --radius-xl:   1rem;
+  --radius-2xl:  1.5rem;
+  --radius-full: 9999px;
+
+  /* ── Spring Easing ────────────────────────────────────────────────── */
+  --ease-spring:       cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-fast:   150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-base:   250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-slow:   400ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Sidebar */
+  --sidebar-bg: rgba(0, 0, 0, 0.72);
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-widget-bg: rgba(255, 255, 255, 0.04);
+  --sidebar-widget-border: rgba(255, 255, 255, 0.07);
+  --sidebar-widget-inset: rgba(255, 255, 255, 0.06);
+  --sidebar-progress-track: rgba(255, 255, 255, 0.07);
+  --nav-icon-idle: rgba(255, 255, 255, 0.06);
+  --nav-active-bg: rgba(255, 255, 255, 0.07);
+  --nav-active-border: rgba(255, 255, 255, 0.08);
+  --nav-bg: rgba(15, 17, 26, 0.45);
+  --nav-shadow: inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.02), 0 24px 48px -12px rgba(0,0,0,0.8);
+  --nav-highlight: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 30%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0.2) 70%, transparent 100%);
+
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --surface-active: rgba(255, 255, 255, 0.13);
+  --surface-offset: rgba(255, 255, 255, 0.04);
+  --surface-dynamic: rgba(255, 255, 255, 0.10);
+  --border: rgba(255, 255, 255, 0.10);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+
+  /* Component-specific */
+  --chat-sidebar-bg: rgba(0, 0, 0, 0.5);
+  --chat-header-bg: rgba(0, 0, 0, 0.35);
+  --chat-area-bg: radial-gradient(ellipse 100% 60% at 50% 0%, rgba(0,212,212,0.04) 0%, transparent 60%);
+  --bubble-ai-bg: rgba(255, 255, 255, 0.06);
+  --bubble-ai-border: rgba(255, 255, 255, 0.08);
+  --bubble-ai-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --bubble-user-bg: linear-gradient(135deg, rgba(0,212,212,0.22) 0%, rgba(0,152,219,0.16) 100%);
+  --bubble-user-border: rgba(0,212,212,0.22);
+  --bubble-user-shadow: 0 2px 16px rgba(0,212,212,0.1);
+  --skill-card-text: rgba(255,255,255,0.85);
+  --skill-card-sub: rgba(255,255,255,0.35);
+
+  --accent-primary: #00d4d4;
+  --accent-secondary: #e040fb;
+  --accent-tertiary: #00e676;
+  --accent-quaternary: #0098db;
+  --accent-cyan: #00d4d4;
+  --accent-fuchsia: #e040fb;
+  --accent-emerald: #00e676;
+  /* Semantic aliases for 2026 tokens */
+  --color-primary: #00d4d4;
+  --color-surface: #0a0a0f;
+  --color-bg: #000000;
+  --color-border: rgba(255,255,255,0.10);
+  --color-blue: #0098db;
+  --color-error: #ef4444;
+
+  --accent-primary-hover: #00ecec;
+  --accent-secondary-hover: #ea60fc;
+  --accent-tertiary-hover: #33ec89;
+  --accent-quaternary-hover: #00b3f0;
+
+  --bg-gradient: radial-gradient(ellipse 120% 80% at 50% -10%, #0a0a0f 0%, #000000 55%);
+  --surface-gradient: linear-gradient(135deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.055) 100%);
+
+  --shadow-sm:  0 1px 2px rgba(10,10,26,0.06);
+  --shadow-md:  0 4px 16px rgba(10,10,26,0.10), 0 1px 3px rgba(10,10,26,0.06);
+  --shadow-lg:  0 12px 40px rgba(10,10,26,0.14), 0 4px 12px rgba(10,10,26,0.08);
+  --shadow-xl: 0 24px 64px rgba(0,0,0,0.8);
+  --shadow-glass: 0 8px 32px rgba(10,10,26,0.12), inset 0 1px 0 rgba(255,255,255,0.12);
+
+  --glow-primary: 0 0 32px rgba(0,212,212,0.4);
+  --glow-secondary: 0 0 32px rgba(224,64,251,0.4);
+  --glow-tertiary: 0 0 32px rgba(0,230,118,0.4);
+  --glow-cyan: 0 0 32px rgba(0,212,212,0.55);
+  --shadow-glow-cyan: 0 0 24px rgba(0,212,212,0.65);
+  --glow-fuchsia: 0 0 32px rgba(224,64,251,0.55);
+  --glow-emerald: 0 0 32px rgba(0,230,118,0.55);
+
+  --rim-light: inset 0 1px 0 rgba(255,255,255,0.10);
+  --rim-top: inset 0 1px 0 rgba(255,255,255,0.15);
+
+  /* Iceberg Illustration (Dark) */
+  --iceberg-blend-mode: screen;
+  --iceberg-aurora-1: rgba(0,212,212,0.9);
+  --iceberg-aurora-2: rgba(124,58,237,0.8);
+  --iceberg-aurora-3: rgba(6,182,212,0.85);
+  --iceberg-aurora-4: rgba(139,92,246,0.75);
+  --iceberg-sky-gradient: linear-gradient(160deg, #030D22 0%, #071B3E 30%, #0A2450 58%, #0D2A5E 100%);
+  --iceberg-ocean-top: #0B2C54;
+  --iceberg-ocean-mid: #041226;
+  --iceberg-ocean-bottom: #000000;
+  --iceberg-shadow-1: #0A1E64;
+  --iceberg-shadow-2: #0A1E64;
+  --iceberg-shadow-3: #1E3C8C;
+  --iceberg-shadow-3: #1E3C8C;
+
+  /* Fades for radial gradient */
+  --iceberg-aurora-1-fade: rgba(0,212,212,0);
+  --iceberg-aurora-2-fade: rgba(124,58,237,0);
+  --iceberg-aurora-3-fade: rgba(6,182,212,0);
+  --iceberg-aurora-4-fade: rgba(139,92,246,0);
+}
+
+:root.light, .light {
+  --background: #F8F9FA;
+  --foreground: #111827;
+  --foreground-muted: rgba(17,24,39,0.65);
+  --foreground-subtle: rgba(17,24,39,0.40);
+
+  --sidebar-bg: #FFFFFF;
+  --sidebar-border: rgba(0,0,0,0.08);
+  --sidebar-widget-bg: rgba(0,0,0,0.03);
+  --sidebar-widget-border: rgba(0,0,0,0.06);
+  --sidebar-widget-inset: #FFFFFF;
+  --sidebar-progress-track: rgba(0,0,0,0.06);
+  --nav-icon-idle: rgba(0,0,0,0.45);
+  --nav-active-border: rgba(0,0,0,0.05);
+
+  /* Iceberg Illustration (Light) */
+  --iceberg-blend-mode: normal;
+  --iceberg-aurora-1: rgba(0,180,212,0.4);
+  --iceberg-aurora-2: rgba(124,58,237,0.3);
+  --iceberg-aurora-3: rgba(6,160,212,0.35);
+  --iceberg-aurora-4: rgba(139,92,246,0.3);
+  
+  --iceberg-aurora-1-fade: rgba(0,180,212,0);
+  --iceberg-aurora-2-fade: rgba(124,58,237,0);
+  --iceberg-aurora-3-fade: rgba(6,160,212,0);
+  --iceberg-aurora-4-fade: rgba(139,92,246,0);
+
+  --iceberg-sky-gradient: linear-gradient(160deg, #E2F1FF 0%, #AAD4FF 30%, #60A5FA 70%, #3B82F6 100%);
+  --iceberg-ocean-top: #E5F3FF;
+  --iceberg-ocean-mid: #CCE5FF;
+  --iceberg-ocean-bottom: #99CCFF;
+  --iceberg-shadow-1: #60A5FA;
+  --iceberg-shadow-2: #3B82F6;
+  --iceberg-shadow-3: #2563EB;
+  --nav-bg: rgba(255,255,255,0.92);
+  --nav-shadow: inset 0 1px 0 rgba(255,255,255,1), 0 -1px 0 rgba(0,0,0,0.05), 0 8px 24px rgba(0,0,0,0.06);
+  --nav-highlight: transparent;
+
+  --surface: #FFFFFF;
+  --surface-hover: #F3F4F6;
+  --surface-active: #E5E7EB;
+  --surface-offset: #F9FAFB;
+  --surface-dynamic: rgba(0,0,0,0.06);
+  --border: rgba(0,0,0,0.09);
+  --border-subtle: rgba(0,0,0,0.04);
+
+  /* Semantic overrides */
+  --color-primary: #007AFF;
+  --color-surface: #FFFFFF;
+  --color-bg: #F2F2F7;
+  --color-border: rgba(0,0,0,0.09);
+  --color-blue: #5856D6;
+  --color-error: #FF3B30;
+
+  --chat-sidebar-bg: rgba(248,248,248,0.92);
+  --chat-header-bg: rgba(255,255,255,0.90);
+  --chat-area-bg: radial-gradient(circle at 50% 0%, rgba(0,122,255,0.03) 0%, transparent 55%);
+  --bubble-ai-bg: rgba(255,255,255,0.96);
+  --bubble-ai-border: rgba(0,0,0,0.06);
+  --bubble-ai-shadow: 0 2px 12px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  /* iOS-style blue bubble for user messages */
+  --bubble-user-bg: linear-gradient(135deg, #007AFF 0%, #0055C4 100%);
+  --bubble-user-border: rgba(0,107,233,0.3);
+  --bubble-user-shadow: 0 2px 12px rgba(0,122,255,0.25);
+  --skill-card-text: #000000;
+  --skill-card-sub: rgba(0,0,0,0.5);
+
+  --accent-primary: #007AFF;
+  --accent-secondary: #FF2D55;
+  --accent-tertiary: #34C759;
+  --accent-quaternary: #5856D6;
+  --accent-cyan: #007AFF;
+  --accent-fuchsia: #FF2D55;
+  --accent-emerald: #34C759;
+
+  --accent-primary-hover: #0056B3;
+  --accent-secondary-hover: #D01C3F;
+  --accent-tertiary-hover: #248A3D;
+  --accent-quaternary-hover: #3D3B99;
+
+  --bg-gradient: #F2F2F7;
+  --surface-gradient: linear-gradient(135deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.6) 100%);
+
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(0,0,0,0.03);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04);
+  --shadow-xl: 0 24px 48px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.05);
+  --shadow-glass: 0 8px 32px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+
+  --glow-primary: 0 0 16px rgba(0,122,255,0.22);
+  --glow-secondary: 0 0 16px rgba(255,45,85,0.22);
+  --glow-tertiary: 0 0 16px rgba(52,199,89,0.22);
+  --glow-cyan: 0 0 16px rgba(0,122,255,0.28);
+  --shadow-glow-cyan: 0 0 20px rgba(0,122,255,0.35);
+  --glow-fuchsia: 0 0 20px rgba(255,45,85,0.28);
+  --glow-emerald: 0 0 20px rgba(52,199,89,0.28);
+
+  --rim-light: inset 0 1px 0 rgba(255,255,255,0.9);
+  --rim-top: inset 0 1px 0 rgba(255,255,255,1);
+
+  /* Iceberg Illustration is explicitly Dark theme only */
+}
+
+
+html {
+  color-scheme: dark;
+  background: var(--background);
+  color: var(--foreground);
+  user-select: none; /* Native app feel */
+  -webkit-user-select: none;
+}
+
+html.light { color-scheme: light; }
+
+/* ── Global scrollbar hiding ─────────────────────────────────────── */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.main-content-shell {
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Prevent iOS zoom on input focus (font-size must be ≥16px) ───── */
+input,
+textarea,
+select {
+  font-size: 16px !important;
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+
+/* ── Kill browser default blue focus ring on ALL inputs globally ──── */
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Allow users to select text inside chat bubbles */
+.select-text {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ── Remove iOS tap highlight globally ───────────────────────────── */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Momentum scrolling for all scroll containers ────────────────── */
+.overflow-y-auto,
+.overflow-x-auto,
+.overflow-auto,
+[class*="overflow-y-"],
+[class*="overflow-x-"] {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: none;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg-gradient);
+  color: var(--foreground);
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Ambient glow — top center, subtle neon bloom (desktop only) */
+@media (min-width: 768px) {
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: radial-gradient(ellipse 900px 700px at 50% -240px,
+      rgba(0,212,212,0.055) 0%,
+      rgba(180,50,240,0.025) 40%,
+      transparent 70%);
+  }
+}
+/* Hide ambient glow on mobile — prevents "ghost rectangle" artifact */
+@media (max-width: 767px) {
+  body::after {
+    display: none;
+  }
+}
+
+.chat-input-wrapper {
+  /* Default Desktop layout - inline in flex col */
+  bottom: auto !important;
+  transform: none !important;
+}
+
+@media (max-width: 767px) {
+  .chat-input-wrapper {
+    /* Mobile - fixed at bottom, taking keyboard offset into account */
+    bottom: var(--mobile-bottom) !important;
+    transition-property: bottom, transform, opacity;
+    transition-duration: 0.15s, 0.3s, 0.3s;
+    transition-timing-function: ease-out;
+  }
+}
+
+/* ── Message list padding: mobile reserves space for fixed ChatInput, desktop doesn't ── */
+:root {
+  --msg-list-pb: calc(90px + env(safe-area-inset-bottom, 16px));
+}
+@media (min-width: 768px) {
+  :root {
+    --msg-list-pb: 24px; /* Desktop: ChatInput is inline in flex column, no extra space needed */
+  }
+}
+
+.light body::after {
+  background: radial-gradient(ellipse at center, rgba(8,145,178,0.04) 0%, transparent 70%);
+}
+html.light body::after {
+  background: radial-gradient(ellipse at center, rgba(8,145,178,0.04) 0%, transparent 70%);
+}
+
+/* ── Fix white ghost shimmer artifacts on glassmorphism elements ──────
+   The skeleton-shimmer::after pseudo-element leaks through backdrop-filter
+   stacking contexts. Isolate each glassmorphic card with its own layer. ── */
+[style*="backdrop-filter"],
+[style*="backdropFilter"],
+.liquid-glass,
+.liquid-glass-dark,
+.glass,
+.glass-card,
+.glass-layer {
+  isolation: isolate;
+}
+
+/* Subtle film-grain noise */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  z-index: 1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  mix-blend-mode: overlay;
+}
+
+/* Scrollbar */
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ── Glow text ───────────────────────────────────────────────────── */
+.glow-primary  { text-shadow: 0 0 12px var(--accent-primary);  color: var(--accent-primary);  }
+.glow-secondary{ text-shadow: 0 0 12px var(--accent-secondary); color: var(--accent-secondary);}
+.glow-tertiary { text-shadow: 0 0 12px var(--accent-tertiary);  color: var(--accent-tertiary); }
+.glow-cyan     { text-shadow: 0 0 16px rgba(0,212,212,0.9);     color: var(--accent-cyan);     }
+.glow-fuchsia  { text-shadow: 0 0 16px rgba(224,64,251,0.9);    color: var(--accent-fuchsia);  }
+.glow-emerald  { text-shadow: 0 0 16px rgba(0,230,118,0.9);     color: var(--accent-emerald);  }
+
+.light .glow-primary,
+.light .glow-secondary,
+.light .glow-tertiary,
+.light .glow-cyan,
+.light .glow-fuchsia,
+.light .glow-emerald { text-shadow: none; }
+
+html.light body::before { opacity: 0; }
+html.light body { background: var(--background); }
+
+/* ── Glassmorphism 2.0 ───────────────────────────────────────────── */
+/* WHY no brightness(): it amplifies skeleton-shimmer ::after pseudo-elements
+   leaking through backdrop-filter layers, causing white ghost artifacts on GPU. */
+.glass {
+  background: rgba(255,255,255,0.045);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: var(--rim-light), 0 8px 32px rgba(0,0,0,0.45);
+  contain: paint;
+  backface-visibility: hidden;
+}
+
+.glass-card {
+  background: rgba(255,255,255,0.04);
+  backdrop-filter: blur(32px) saturate(200%);
+  -webkit-backdrop-filter: blur(32px) saturate(200%);
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: var(--rim-top), 0 16px 48px rgba(0,0,0,0.55), 0 4px 16px rgba(0,0,0,0.3);
+  contain: paint;
+  backface-visibility: hidden;
+}
+
+.liquid-glass {
+  background: var(--surface);
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border: 1px solid var(--border);
+  box-shadow: var(--rim-top), var(--shadow-md);
+  contain: paint;
+  backface-visibility: hidden;
+}
+
+.liquid-glass-strong {
+  background: rgba(255,255,255,0.055);
+  backdrop-filter: blur(40px) saturate(220%);
+  -webkit-backdrop-filter: blur(40px) saturate(220%);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 20px 60px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.35);
+  contain: paint;
+  backface-visibility: hidden;
+}
+
+html.light .liquid-glass {
+  background: rgba(255,255,255,0.72) !important;
+  backdrop-filter: blur(28px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(180%) !important;
+  border: 1px solid rgba(0,0,0,0.08) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 4px 20px rgba(0,0,0,0.10) !important;
+}
+.light .liquid-glass {
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 4px 20px rgba(0,0,0,0.10);
+}
+
+.liquid-glass-dark {
+  background: rgba(0,0,0,0.22);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.16);
+}
+
+/* ── Liquid Glass 2026 — oklch-based glass layer ─────────────────── */
+/* WHY: oklch() provides perceptually uniform colors — the glass tint
+   stays consistent across different backgrounds, unlike rgba() which
+   can look muddy against certain hues. This is the premium look. */
+/* SCOPE: Apply ONLY to navs, modals, card overlays.
+   DO NOT apply to: main content, forms, data tables. */
+.glass-layer {
+  background: oklch(0.25 0.01 260 / 0.12);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid oklch(1 0 0 / 0.18);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.25),
+    0 8px 32px oklch(0 0 0 / 0.12);
+  border-radius: 16px;
+  contain: paint;
+  backface-visibility: hidden;
+}
+
+html.light .glass-layer {
+  background: oklch(0.98 0.005 260 / 0.72);
+  border: 1px solid oklch(0 0 0 / 0.08);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.9),
+    0 4px 20px oklch(0 0 0 / 0.10);
+}
+
+/* ── CSS @property — animatable custom properties ────────────────── */
+/* WHY: CSS custom properties can't normally be animated (they're discrete).
+   @property registers them with a type so the browser can interpolate. 
+   This enables smooth gradient transitions without JS. */
+@property --glass-hue {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 260;
+}
+
+@property --glass-lightness {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0.25;
+}
+
+@property --gradient-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 135deg;
+}
+
+/* ── Accessibility: Glass fallbacks ──────────────────────────────── */
+/* WHY: Some users experience motion sickness or visual discomfort from
+   transparency effects. prefers-reduced-transparency is the standard
+   media query for this. forced-colors is for Windows High Contrast mode. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .glass-card, .liquid-glass, .liquid-glass-strong,
+  .liquid-glass-dark, .glass-layer {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    /* Solid semi-opaque background — maintains readability without transparency */
+    background: oklch(0.15 0 0 / 0.92) !important;
+    filter: none !important;
+  }
+  html.light .glass, html.light .glass-card, html.light .liquid-glass,
+  html.light .liquid-glass-strong, html.light .glass-layer {
+    background: oklch(0.97 0 0 / 0.95) !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .glass, .glass-card, .liquid-glass, .liquid-glass-strong,
+  .liquid-glass-dark, .glass-layer {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
+    border: 2px solid CanvasText !important;
+    background: Canvas !important;
+    box-shadow: none !important;
+  }
+}
+
+/* ── Neon glow boxes ─────────────────────────────────────────────── */
+.neon-cyan {
+  box-shadow: 0 0 0 1px rgba(0,212,212,0.3), 0 0 24px rgba(0,212,212,0.2), inset 0 1px 0 rgba(0,212,212,0.1);
+}
+.neon-fuchsia {
+  box-shadow: 0 0 0 1px rgba(224,64,251,0.3), 0 0 24px rgba(224,64,251,0.2), inset 0 1px 0 rgba(224,64,251,0.1);
+}
+.neon-emerald {
+  box-shadow: 0 0 0 1px rgba(0,230,118,0.3), 0 0 24px rgba(0,230,118,0.2), inset 0 1px 0 rgba(0,230,118,0.1);
+}
+
+/* ── Squircle radii ──────────────────────────────────────────────── */
+.squircle    { border-radius: 24px; }
+.squircle-lg { border-radius: 32px; }
+.squircle-xl { border-radius: 40px; }
+
+/* ── Gradient fills ──────────────────────────────────────────────── */
+.bio-cyan     { background: linear-gradient(135deg, #00d4d4, #0098db); box-shadow: 0 0 16px rgba(0,212,212,0.45); }
+.bio-fuchsia  { background: linear-gradient(135deg, #e040fb, #9c27b0); box-shadow: 0 0 16px rgba(224,64,251,0.45); }
+.bio-emerald  { background: linear-gradient(135deg, #00e676, #00bcd4); box-shadow: 0 0 16px rgba(0,230,118,0.45); }
+.bio-primary  { background: linear-gradient(135deg, var(--accent-primary), var(--accent-quaternary)); box-shadow: var(--glow-primary); }
+.bio-secondary{ background: linear-gradient(135deg, var(--accent-secondary), #f000b8); box-shadow: var(--glow-secondary); }
+
+.gradient-avatar {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-cyan) 18%, transparent), color-mix(in srgb, var(--accent-fuchsia) 15%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-cyan) 25%, transparent);
+}
+.gradient-cta {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-quaternary) 100%);
+}
+.gradient-cta-overlay {
+  background: linear-gradient(105deg, transparent 25%, rgba(255,255,255,0.28) 50%, transparent 75%);
+}
+
+/* ── Typography ──────────────────────────────────────────────────── */
+.micro-copy {
+  font-size: clamp(12px, 0.7rem, 12px); /* Minimum 12px — non-negotiable */
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--foreground-muted);
+}
+
+.brutal-heading {
+  font-weight: 900;
+  letter-spacing: -0.055em;
+  text-transform: uppercase;
+}
+
+.hero-title {
+  font-weight: 900;
+  letter-spacing: -0.06em;
+  line-height: 0.92;
+  background: linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.7) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Safe area ───────────────────────────────────────────────────── */
+@supports (padding: max(0px)) {
+  .pt-safe-or-0 { padding-top: env(safe-area-inset-top); }
+  .pb-safe-or-0 { padding-bottom: env(safe-area-inset-bottom); }
+  .px-safe-or-4 { padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); }
+}
+@supports not (padding: max(0px)) {
+  .pt-safe-or-0 { padding-top: 0; }
+  .pb-safe-or-0 { padding-bottom: 0; }
+  .px-safe-or-4 { padding-left: 1rem; padding-right: 1rem; }
+}
+
+/* ── Touch optimisation ──────────────────────────────────────────── */
+/* Eliminates the 300ms tap delay on iOS/Android */
+button,
+a,
+[role="button"],
+input,
+textarea,
+select {
+  touch-action: manipulation;
+}
+
+/* Minimum 44×44 pt hit area for small icon buttons */
+.tap-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Animations ──────────────────────────────────────────────────── */
+@keyframes springBounce {
+  0%   { transform: scale(0.3) translateY(80px); opacity: 0; }
+  55%  { transform: scale(1.04) translateY(-8px); }
+  75%  { transform: scale(0.96) translateY(4px); }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+@keyframes springSlideUp {
+  0%   { transform: translateY(40px); opacity: 0; }
+  75%  { transform: translateY(-4px); }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* NOTE: @keyframes shimmer is defined ONCE below (the GPU-composited version) */
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(0,212,212,0.3); }
+  50%       { box-shadow: 0 0 28px rgba(0,212,212,0.7); }
+}
+
+@keyframes pulse-glow-fuchsia {
+  0%, 100% { box-shadow: 0 0 12px rgba(224,64,251,0.3); }
+  50%       { box-shadow: 0 0 28px rgba(224,64,251,0.7); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideRight {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+.spring-bounce   { animation: springBounce 0.55s cubic-bezier(0.68,-0.55,0.265,1.55) both; }
+.spring-slide-up { animation: springSlideUp 0.45s cubic-bezier(0.68,-0.55,0.265,1.55) both; }
+.float-animation { animation: float 3.5s ease-in-out infinite; }
+.fade-in         { animation: fadeIn 0.35s ease both; }
+.scale-in        { animation: scaleIn 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+.shimmer-effect {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer-bg 2.5s ease infinite;
+}
+
+/* ── Tactile interactive buttons ─────────────────────────────────── */
+.dopamine-button {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.14s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.16s ease;
+  will-change: transform;
+}
+
+.dopamine-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at center, rgba(255,255,255,0.18) 0%, transparent 65%);
+  opacity: 0;
+  transition: opacity 0.22s ease;
+  pointer-events: none;
+}
+
+.dopamine-button:hover::after  { opacity: 1; }
+.dopamine-button:hover  { transform: translateY(-1px) scale(1.01); }
+/* WHY: scale(0.96) + opacity(0.9) gives precise "physical press" feel.
+   80-120ms is the sweet spot — fast enough to feel instant, slow enough
+   to register visually. The overshoot easing adds satisfying bounce. */
+.dopamine-button:active {
+  transform: translateY(0) scale(0.96);
+  opacity: 0.9;
+  transition-duration: 100ms;
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Hover glow effect ──────────────────────────────────────────── */
+/* WHY: Uses CSS custom properties for the glow color so each component
+   can set --hover-glow-color without duplicating the entire rule.
+   150ms ease-out matches Apple's HIG timing recommendations. */
+.hover-glow {
+  --hover-glow-color: rgba(0, 212, 212, 0.4);
+  transition: box-shadow 150ms ease-out;
+}
+.hover-glow:hover {
+  box-shadow: 0 0 24px var(--hover-glow-color), 0 0 8px var(--hover-glow-color);
+}
+html.light .hover-glow:hover {
+  box-shadow: 0 0 16px var(--hover-glow-color), 0 0 4px var(--hover-glow-color);
+}
+
+.hover-lift {
+  transition: transform 0.22s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.22s ease;
+  will-change: transform;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ── Chat message typing indicator ──────────────────────────────── */
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%            { transform: translateY(-6px); opacity: 1; }
+}
+
+.typing-dot:nth-child(1) { animation: typing-dot 1.2s ease infinite 0s; }
+.typing-dot:nth-child(2) { animation: typing-dot 1.2s ease infinite 0.18s; }
+.typing-dot:nth-child(3) { animation: typing-dot 1.2s ease infinite 0.36s; }
+
+/* ── Focus ring ──────────────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+textarea:focus-visible,
+input:focus-visible {
+  outline: none;
+}
+
+/* ── Neon separator ──────────────────────────────────────────────── */
+.neon-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,212,212,0.3), transparent);
+}
+
+/* ── Glow pulse button (GPU-composited via filter: drop-shadow) ──── */
+@keyframes glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 6px rgba(0, 212, 212, 0.45)); }
+  50%       { filter: drop-shadow(0 0 22px rgba(0, 212, 212, 0.95)); }
+}
+
+.glow-pulse-wrap {
+  border-radius: 1rem;
+  animation: glow-pulse 4.5s ease-in-out infinite;
+  will-change: filter;
+}
+
+/* ── Shimmer skeleton (GPU: only transform — no layout thrashing) ── */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Accessible skeleton data loading blocks */
+@keyframes skeleton-shimmer-bg {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-offset, rgba(255,255,255,0.04)) 25%,
+    var(--surface-dynamic, rgba(255,255,255,0.10)) 50%,
+    var(--surface-offset, rgba(255,255,255,0.04)) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer-bg 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm, 0.375rem);
+}
+
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  /* Prevent shimmer ::after from bleeding through backdrop-filter layers */
+  isolation: isolate;
+  contain: paint;
+}
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255,255,255,0.07) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s ease-in-out infinite;
+  will-change: transform;
+  /* Clip to parent bounds — prevents bleed through glass layers */
+  clip-path: inset(0);
+}
+
+/* ── Button System ────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 1.25rem;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  border: 1px solid transparent;
+  position: relative;
+  overflow: hidden;
+}
+.btn:focus-visible {
+  outline: 2px solid var(--color-primary, var(--accent-primary));
+  outline-offset: 2px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+/* WHY: Refined active state — scale(0.96) matches spec for physical press feel.
+   opacity(0.9) provides instant visual feedback. The bounce easing overshoots
+   slightly on release creating a satisfying "snap back" effect. */
+.btn:active:not(:disabled) {
+  transform: scale(0.96);
+  opacity: 0.9;
+  transition-duration: 100ms;
+  transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-primary {
+  background: var(--accent-primary);
+  color: #000;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-primary-hover);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.btn-glass {
+  background: color-mix(in srgb, var(--color-primary, var(--accent-primary)) 15%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--color-primary, var(--accent-primary)) 30%, transparent);
+  color: var(--color-primary, var(--accent-primary));
+}
+.btn-glass:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary, var(--accent-primary)) 25%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary, var(--accent-primary)) 50%, transparent);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--foreground-muted);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+.btn-destructive {
+  background: color-mix(in srgb, var(--color-error, #ef4444) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error, #ef4444) 30%, transparent);
+  color: var(--color-error, #ef4444);
+}
+.btn-destructive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error, #ef4444) 25%, transparent);
+  border-color: color-mix(in srgb, var(--color-error, #ef4444) 50%, transparent);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--color-error, #ef4444) 20%, transparent);
+}
+
+/* ── Skip Navigation ─────────────────────────────────────────────── */
+.skip-link {
+  position: fixed;
+  top: -100%;
+  left: 1rem;
+  z-index: 9999;
+  padding: 0.5rem 1rem;
+  background: var(--accent-primary);
+  color: #000;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--transition-fast);
+}
+.skip-link:focus {
+  top: 1rem;
+}
+
+/* ── 2026 Typography & Physics ───────────────────────────────────── */
+h1, h2, h3, .heading-tight {
+  letter-spacing: -0.05em;
+}
+
+.tracking-widest {
+  letter-spacing: 0.25em !important;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+.tap-target {
+  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease;
+  will-change: transform;
+}
+.tap-target:active {
+  transform: scale(0.96);
+  opacity: 0.8 !important;
+}
+
+/* ── prefers-reduced-motion (mandatory accessibility) ───────────── */
+/* WHY: Users who experience motion sickness or seizures set this preference.
+   We MUST respect it. This disables all animations and transitions globally.
+   Individual @keyframes are also wrapped in no-preference checks. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Disable GPU-composited animations that bypass the above */
+  .float-animation,
+  .spring-bounce,
+  .spring-slide-up,
+  .shimmer-effect,
+  .glow-pulse-wrap {
+    animation: none !important;
+  }
+}
+
+/* ── CLS Prevention: Aspect Ratio Utilities ─────────────────────── */
+/* WHY: Without explicit aspect-ratio, images and media cause layout shifts
+   when they load (CLS > 0.1). These utilities reserve exact space. */
+.aspect-square  { aspect-ratio: 1 / 1; }
+.aspect-video   { aspect-ratio: 16 / 9; }
+.aspect-photo   { aspect-ratio: 4 / 3; }
+.aspect-avatar  { aspect-ratio: 1 / 1; border-radius: var(--radius-full); }
+
+/* ── CLS Prevention: Min-height skeletons ────────────────────────── */
+/* WHY: Dynamic sections that load data must reserve vertical space
+   to prevent the page from "jumping" when content appears. */
+.section-skeleton     { min-height: 120px; }
+.section-skeleton-lg  { min-height: 200px; }
+.section-skeleton-xl  { min-height: 300px; }
+
+/* ── Performance: Content Visibility ─────────────────────────────── */
+/* WHY: content-visibility: auto tells the browser to skip rendering
+   off-screen content entirely. contain-intrinsic-size prevents CLS
+   by reserving minimum space. Huge FCP/LCP win for long pages. */
+.content-lazy {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+
+/* ── Tap-to-like effect (pure CSS, no JS) ────────────────────────── */
+/* WHY: Delightful micro-interaction for like/heart actions.
+   Uses CSS @keyframes + SVG-compatible transforms. No layout reflow. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes tap-like-pop {
+    0%   { transform: scale(1); }
+    15%  { transform: scale(0.7); }
+    40%  { transform: scale(1.25); }
+    70%  { transform: scale(0.95); }
+    100% { transform: scale(1); }
+  }
+  .tap-like:active svg,
+  .tap-like:active .like-icon {
+    animation: tap-like-pop 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  @keyframes tap-like-particles {
+    0%   { opacity: 1; transform: scale(0.3); }
+    50%  { opacity: 0.8; transform: scale(1.2); }
+    100% { opacity: 0; transform: scale(1.5); }
+  }
+  .tap-like::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(0,212,212,0.3) 0%, transparent 70%);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tap-like:active::after {
+    animation: tap-like-particles 500ms ease-out;
+  }
+}
+
+/* ── Aurora Background Keyframes ─────────────────────────────────── */
+/* WHY: Moved from dangerouslySetInnerHTML in AuroraBackground.tsx to proper
+   CSS for better caching and no hydration cost. Wrapped in no-preference
+   to respect reduced-motion users. */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes aurora-drift-1 {
+    0%, 100% { transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg); }
+    50% { transform: translate3d(20%, -15%, 0) scale(1.4) rotate(35deg); }
+  }
+  @keyframes aurora-drift-2 {
+    0%, 100% { transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg); }
+    50% { transform: translate3d(-25%, 20%, 0) scale(1.2) rotate(-25deg); }
+  }
+  @keyframes aurora-drift-3 {
+    0%, 100% { transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg); }
+    50% { transform: translate3d(15%, 25%, 0) scale(1.5) rotate(50deg); }
+  }
+  @keyframes aurora-drift-4 {
+    0%, 100% { transform: translate3d(0%, 0%, 0) scale(1) rotate(0deg); opacity: 0.18; }
+    33% { transform: translate3d(-8%, 12%, 0) scale(1.25) rotate(15deg); opacity: 0.3; }
+    66% { transform: translate3d(10%, -8%, 0) scale(1.15) rotate(-10deg); opacity: 0.22; }
+  }
+}
+
+/* ── Glassmorphic isolation: prevent skeleton shimmer bleed ───── */
+/* WHY: Elements using backdrop-filter create a new compositing layer.
+   The skeleton-shimmer ::after pseudo-element uses position:absolute and can
+   bleed through backdrop-filter layers due to stacking context issues on
+   some GPUs/browsers. Setting isolation:isolate on the host fixes this. */
+[style*="backdrop-filter"],
+[style*="backdropFilter"],
+[style*="WebkitBackdropFilter"] {
+  isolation: isolate;
+}
+
+/* ── ChatInput: desktop overrides (no BottomNav on desktop) ─────── */
+@media (min-width: 768px) {
+  .chat-input-wrapper {
+    padding-bottom: 12px !important;
+  }
+}
+
+/* ── Main content shell: mobile bottom clearance for BottomNav ─── */
+.main-content-shell {
+  padding-bottom: 0;
+}
+@media (min-width: 768px) {
+  .main-content-shell {
+    padding-bottom: 0 !important;
+  }
+}
