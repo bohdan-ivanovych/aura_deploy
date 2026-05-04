@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { BookOpen, X, Plus, Check, Loader2, Lightbulb } from 'lucide-react';
 import { toast } from 'sonner';
 import { haptics } from '@/lib/utils/haptics';
@@ -36,8 +36,21 @@ export function GrammarExplainSheet({ isOpen, onClose, messageText, sessionId }:
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // Task 2: document-level mousedown to dismiss on click-outside
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (sheetRef.current && !sheetRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!isOpen || !messageText) return;
@@ -125,7 +138,7 @@ export function GrammarExplainSheet({ isOpen, onClose, messageText, sessionId }:
             style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' } as any}
             onClick={e => e.stopPropagation()}
           >
-            <div className="mx-3 mb-3 rounded-[24px] overflow-hidden" style={GLASS}>
+            <div ref={sheetRef} className="mx-3 mb-3 rounded-[24px] overflow-hidden" style={GLASS}>
 
               {/* Drag handle */}
               <div className="flex justify-center pt-3">

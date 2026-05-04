@@ -23,10 +23,6 @@ const LevelUpModal = dynamic(
   () => import('@/components/ui/LevelUpModal').then(m => ({ default: m.LevelUpModal })),
   { ssr: false }
 );
-const VideoReelModal = dynamic(
-  () => import('@/components/chat/VideoReelModal').then(m => ({ default: m.VideoReelModal })),
-  { ssr: false }
-);
 const PushPrompt = dynamic(
   () => import('@/components/chat/PushPrompt').then(m => ({ default: m.PushPrompt })),
   { ssr: false }
@@ -44,7 +40,7 @@ import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Trash2, Plus, X, MoreVertical,
-  ChevronLeft, Film, Zap, Phone, Bot, Eye
+  ChevronLeft, Zap, Phone, Bot, Eye
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -143,6 +139,9 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
   const [hasReadCorrection, setHasReadCorrection] = useState(false);
   const [isWatching, setIsWatching] = useState(false);
   const { triggerInstallIfEligible } = usePWAInstall();
+
+  // Task 10: promotional period — suppress all limit UI client-side
+  const isUnlimitedPeriod = new Date() < new Date('2026-06-01T00:00:00Z');
 
   useEffect(() => {
     fetch('/api/settings')
@@ -301,20 +300,6 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
           {leveledUp && (
             <LevelUpModal newLevel={leveledUp.newLevel} newDepth={leveledUp.newDepth} onClose={clearLevelUp} />
           )}
-          {showReelModal && selectedSession && (
-            <VideoReelModal
-              messages={reelMessages.length > 0 ? reelMessages : currentMessages.slice(0, 18).map((m: any) => ({
-                id: m.id!,
-                text: m.text,
-                sender: (m.sender === 'USER' ? 'USER' : 'AI') as 'USER' | 'AI',
-                weaknessIdentified: m.weaknessIdentified ?? null,
-              }))}
-              persona={selectedSession.persona}
-              diveDepth={stats?.diveDepth ?? 0}
-              sessionCount={sessions.length}
-              onClose={() => setShowReelModal(false)}
-            />
-          )}
         </AnimatePresence>
 
         <RegisterPrompt open={showRegisterPrompt} onDismiss={handleRegisterPromptDismiss} />
@@ -427,13 +412,6 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                   >
                     <Phone className="w-5 h-5" style={{ color: 'var(--foreground-muted)' }} />
                   </button>
-                  <button
-                    onClick={toggleReelMode}
-                    className={`tap-target rounded-xl transition-colors ${reelMode ? 'bg-[var(--accent-cyan)]/15' : 'hover:bg-[var(--surface-hover)]'}`}
-                    title={reelMode ? 'Exit Reel Mode' : 'Create Reel'}
-                  >
-                    <Film className="w-5 h-5" style={{ color: reelMode ? 'var(--accent-cyan)' : 'var(--foreground-muted)' }} />
-                  </button>
                   <div className="relative">
                     <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                       className="tap-target rounded-xl transition-colors"
@@ -508,7 +486,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
 
 
               <AnimatePresence>
-                {limitReached && (
+                {limitReached && !isUnlimitedPeriod && (
                   <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
@@ -539,60 +517,20 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                 )}
               </AnimatePresence>
 
-              {/* Reel selection bar — mobile */}
-              <AnimatePresence>
-                {reelMode && (
-                  <motion.div
-                    initial={{ y: 80, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: 80, opacity: 0 }}
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                    className="absolute bottom-0 left-0 right-0 z-30 px-4 pt-3 pb-[calc(68px+max(16px,env(safe-area-inset-bottom,16px))+12px)]"
-                    style={{ background: 'var(--surface)', backdropFilter: 'blur(20px)', borderTop: '1px solid var(--border)' }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={toggleReelMode}
-                        className="p-2 rounded-xl hover:bg-[var(--surface-hover)] transition-colors"
-                      >
-                        <X className="w-4 h-4 text-[var(--foreground-muted)]" />
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: 'var(--accent-cyan)' }}>
-                          {selectedMsgIds.size > 0
-                            ? `${selectedMsgIds.size}/18 selected`
-                            : 'Tap messages to select (max 18)'}
-                        </p>
-                      </div>
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => setShowReelModal(true)}
-                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all"
-                        style={{ background: 'var(--accent-cyan)', color: '#000' }}
-                      >
-                        <Film className="w-3.5 h-3.5" />
-                        Turn session into a reel →
-                      </motion.button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
-              {!reelMode && (
-                <>
-                  {/* Onboarding hint relocated to MessageList */}
-                  {showPushPrompt && (
-                    <div className="fixed z-50 left-0 right-0 pointer-events-none flex justify-center" style={{ bottom: 'calc(138px + max(16px, env(safe-area-inset-bottom, 16px)))' }}>
-                      <div className="pointer-events-auto w-full max-w-lg">
-                        <PushPrompt onDismiss={handlePushPromptDismiss} />
-                      </div>
+              <>
+                {/* Onboarding hint relocated to MessageList */}
+                {showPushPrompt && (
+                  <div className="fixed z-50 left-0 right-0 pointer-events-none flex justify-center" style={{ bottom: 'calc(138px + max(16px, env(safe-area-inset-bottom, 16px)))' }}>
+                    <div className="pointer-events-auto w-full max-w-lg">
+                      <PushPrompt onDismiss={handlePushPromptDismiss} />
                     </div>
-                  )}
-                  <ChatInput onSend={sendHandler} disabled={loading}
-                    selectedSession={selectedSession} replyTo={replyTo}
-                    onCancelReply={handleCancelReply} initialText={practicePrompt} />
-                </>
-              )}
+                  </div>
+                )}
+                <ChatInput onSend={sendHandler} disabled={loading}
+                  selectedSession={selectedSession} replyTo={replyTo}
+                  onCancelReply={handleCancelReply} initialText={practicePrompt} />
+              </>
             </div>
           )}
 
@@ -659,13 +597,6 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <button
-                      onClick={toggleReelMode}
-                      className={`p-2 rounded-xl transition-colors ${reelMode ? 'bg-[var(--accent-cyan)]/15' : 'hover:bg-[var(--surface-hover)]'}`}
-                      title={reelMode ? 'Exit Reel Mode' : 'Create Reel'}
-                    >
-                      <Film className="w-4 h-4" style={{ color: reelMode ? 'var(--accent-cyan)' : 'var(--foreground-muted)' }} />
-                    </button>
                     <button onClick={() => {
                       handleWipePersonaMemory(selectedSession.persona.id, selectedSession.id);
                       handleDeleteSession(selectedSession.id);
@@ -713,7 +644,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
 
 
                 <AnimatePresence>
-                  {limitReached && (
+                  {limitReached && !isUnlimitedPeriod && (
                     <motion.div
                       initial={{ y: 40, opacity: 0 }}
                       animate={{ y: 0, opacity: 1 }}
@@ -743,50 +674,15 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                   )}
                 </AnimatePresence>
 
-                {/* Reel selection bar — desktop */}
-                <AnimatePresence>
-                  {reelMode && (
-                    <motion.div
-                      initial={{ y: 60, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      exit={{ y: 60, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                      className="px-6 py-3 flex items-center gap-4"
-                      style={{ background: 'var(--surface)', backdropFilter: 'blur(20px)', borderTop: '1px solid var(--border)' }}
-                    >
-                      <button onClick={toggleReelMode} className="p-1.5 rounded-xl hover:bg-[var(--surface-hover)] transition-colors">
-                        <X className="w-4 h-4 text-[var(--foreground-muted)]" />
-                      </button>
-                      <div className="flex-1">
-                        <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: 'var(--accent-cyan)' }}>
-                          {selectedMsgIds.size > 0
-                            ? `${selectedMsgIds.size}/18 messages selected`
-                            : 'Click messages to select (max 18)'}
-                        </p>
-                      </div>
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => setShowReelModal(true)}
-                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-black text-[11px] uppercase tracking-widest transition-all"
-                        style={{ background: 'var(--accent-cyan)', color: '#000' }}
-                      >
-                        <Film className="w-4 h-4" />
-                        Turn session into a reel →
-                      </motion.button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
 
-                {!reelMode && (
-                  <>
-                    {showPushPrompt && (
-                      <PushPrompt onDismiss={handlePushPromptDismiss} />
-                    )}
-                    <ChatInput onSend={sendHandler} disabled={loading}
-                      selectedSession={selectedSession} replyTo={replyTo}
-                      onCancelReply={handleCancelReply} initialText={practicePrompt} />
-                  </>
-                )}
+                <>
+                  {showPushPrompt && (
+                    <PushPrompt onDismiss={handlePushPromptDismiss} />
+                  )}
+                  <ChatInput onSend={sendHandler} disabled={loading}
+                    selectedSession={selectedSession} replyTo={replyTo}
+                    onCancelReply={handleCancelReply} initialText={practicePrompt} />
+                </>
               </>
             ) : chatSessionsLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 relative z-10 w-full h-full pb-8">

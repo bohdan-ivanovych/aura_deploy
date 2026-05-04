@@ -73,6 +73,7 @@ export async function GET() {
         questId: true,
         completed: true,
         completedAt: true,
+        progress: true,
         quest: { select: { id: true, title: true, description: true, xp: true } }
       },
       orderBy: { completedAt: 'desc' },
@@ -160,6 +161,11 @@ export async function GET() {
         .map(uq => uq.questId)
     );
 
+    // Build progress map from UserQuest.progress
+    const progressByQuestId = new Map<string, number>(
+      userQuests.map(uq => [uq.questId, uq.progress ?? 0])
+    );
+
     const questsWithStatus = finalQuestsToDisplay.map(q => {
       let target = 1;
       const numMatch = q.description.match(/\b(\d+)\b/);
@@ -167,16 +173,21 @@ export async function GET() {
 
       const isCompleted = completedSet.has(q.id);
 
-      let progress = 0;
+      let progress = progressByQuestId.get(q.id) ?? 0;
       if (isCompleted) {
         progress = target;
-      } else if (q.title === 'Depth Diver' || q.title === 'Marathon' || q.title === 'Warm Up') {
-        const lastReset = user.dailyMessageResetAt ? new Date(user.dailyMessageResetAt) : null;
-        const countIsToday = lastReset && lastReset >= today;
-        progress = countIsToday ? Math.min(user.dailyMessageCount, target) : 0;
+      } else if (progress === 0) {
+        // Fallback: for message-count quests, use dailyMessageCount if UserQuest.progress not yet set
+        const isMessageQuest = q.description.toLowerCase().includes('send') &&
+          (q.description.toLowerCase().includes('message') || q.description.toLowerCase().includes('messages'));
+        if (isMessageQuest) {
+          const lastReset = user.dailyMessageResetAt ? new Date(user.dailyMessageResetAt) : null;
+          const countIsToday = lastReset && lastReset >= today;
+          progress = countIsToday ? Math.min(user.dailyMessageCount, target) : 0;
+        }
       }
 
-      return { ...q, completed: isCompleted, progress, target };
+      return { ...q, completed: isCompleted, progress: Math.min(progress, target), target };
     });
 
     return NextResponse.json({ quests: questsWithStatus });

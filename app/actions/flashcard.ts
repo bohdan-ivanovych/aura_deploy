@@ -43,8 +43,17 @@ export async function importPublicDeck(userId: string, publicDeckId: string) {
   });
   if (!publicDeck || !publicDeck.isPublic) throw new Error('Deck not available');
 
+  // Task 11B: check for duplicate import (user already has this deck)
+  const alreadyImported = await prisma.deck.findFirst({
+    where: { userId, title: publicDeck.title, isPublic: false },
+  });
+  if (alreadyImported) throw new Error('You already have this deck in your collection.');
+
   const currentUser = await prisma.user.findUnique({ where: { id: userId } });
   const translateTo = currentUser?.explanationLanguage === 'native' ? currentUser.nativeLanguage : null;
+
+  // Initialize FSRS state for every card
+  const emptyCard = createEmptyCard(new Date());
 
   let finalCards = publicDeck.cards.map(c => ({
     userId,
@@ -53,10 +62,18 @@ export async function importPublicDeck(userId: string, publicDeckId: string) {
     englishExplanation: c.englishExplanation,
     type: c.type,
     contextSentence: c.contextSentence,
+    // Standalone FSRS fields — initialized fresh for this user
+    fsrsState: emptyCard.state,
+    fsrsStability: emptyCard.stability,
+    fsrsDifficulty: emptyCard.difficulty,
+    fsrsElapsedDays: emptyCard.elapsed_days,
+    fsrsScheduledDays: emptyCard.scheduled_days,
+    fsrsReps: emptyCard.reps,
+    fsrsLapses: emptyCard.lapses,
+    nextReview: emptyCard.due,
   }));
 
   if (translateTo && translateTo !== 'en') {
-    // Dynamically import AI utility
     const { getGroqClient, GROQ_MODEL } = await import('@/lib/ai/groq');
     const groq = getGroqClient();
 
@@ -80,22 +97,22 @@ export async function importPublicDeck(userId: string, publicDeckId: string) {
         }));
       }
     } catch (e) {
-      console.error("Failed to dynamically translate library deck", e);
-      // Fallback to english if translation fails
+      console.error('Failed to dynamically translate library deck', e);
     }
   }
 
+  // Task 11B: standalone — no originalId, so deck survives if source is deleted
   const clonedDeck = await prisma.deck.create({
     data: {
       userId,
       title: publicDeck.title,
       description: publicDeck.description,
       isPublic: false,
-      originalId: publicDeck.id,
+      // Intentionally omit originalId → fully independent copy
       cards: {
-        create: finalCards
-      }
-    }
+        create: finalCards,
+      },
+    },
   });
   revalidatePath('/flashcards');
   return clonedDeck;

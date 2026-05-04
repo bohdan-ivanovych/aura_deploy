@@ -9,6 +9,7 @@ import { ContextMenu, MessageRect } from '@/components/chat/ContextMenu';
 import { GrammarExplainSheet } from '@/components/chat/GrammarExplainSheet';
 import ClickableWordText from '@/components/chat/ClickableWordText';
 import MagicTextWrapper from '@/components/chat/MagicTextWrapper';
+import { usePopupStore } from '@/lib/stores/popup-store';
 
 import { 
   ErrorHighlightedText, 
@@ -139,7 +140,11 @@ export const ChatMessage = memo(function ChatMessage({
   const [contextMenuVisible, setContextMenuVisible] = useState(false);
   const [messageRect, setMessageRect] = useState<MessageRect | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
-  const [grammarSheetOpen, setGrammarSheetOpen] = useState(false);
+
+  // Task 2: singleton grammar sheet — only one open across all messages
+  const { openPopup, openPopupById, closePopup } = usePopupStore();
+  const grammarSheetKey = `correction-${messageId ?? 'unknown'}`;
+  const grammarSheetOpen = openPopup?.type === 'correction' && openPopup.id === grammarSheetKey;
 
   const [showMetersBadge, setShowMetersBadge] = useState(false);
   const hasShownMeters = useRef(false);
@@ -279,6 +284,7 @@ export const ChatMessage = memo(function ChatMessage({
                 <div
                   key={idx}
                   className={`relative px-4 py-3 transition-all ${reelMode && isAI ? 'select-text' : 'select-none'}`}
+                  {...(isAI ? { 'data-ai-bubble': 'true' } : {})}
                   style={isAI ? {
                     background: 'var(--bubble-ai-bg)', border: '1px solid var(--bubble-ai-border)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), var(--bubble-ai-shadow)', isolation: 'isolate', WebkitTouchCallout: reelMode ? 'default' : 'none', userSelect: reelMode ? 'text' : 'none', WebkitUserSelect: reelMode ? 'text' : 'none', ...currentBorderRadius,
                   } : {
@@ -376,12 +382,12 @@ export const ChatMessage = memo(function ChatMessage({
         onReact={onReaction && messageId ? (emoji: string) => onReaction(messageId, emoji) : undefined}
         onCopy={(text) => navigator.clipboard.writeText(text)}
         onSpeak={() => {}}
-        onExplain={isAI ? () => { setContextMenuVisible(false); setGrammarSheetOpen(true); } : undefined}
+        onExplain={isAI ? () => { setContextMenuVisible(false); openPopupById('correction', grammarSheetKey); } : undefined}
         onReply={onReply && messageId ? () => { onReply({ id: messageId, text: message, sender: isAI ? 'AI' : 'USER' }); setContextMenuVisible(false); } : undefined}
       />
       <GrammarExplainSheet
         isOpen={grammarSheetOpen}
-        onClose={() => setGrammarSheetOpen(false)}
+        onClose={closePopup}
         messageText={message}
       />
     </>

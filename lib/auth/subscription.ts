@@ -5,12 +5,21 @@ export const FREE_LIMITS = {
   reelsPerDay: 1,
 } as const
 
+// ─── Promotional unlimited period ────────────────────────────────────────────
+// All users get unlimited messages until this date (server-side check only).
+const UNLIMITED_UNTIL = new Date('2026-06-01T00:00:00Z');
+
 export async function checkMessageLimit(userId: string): Promise<{
   allowed: boolean
   remaining: number
   isPro: boolean
   resetAt: string | null
 }> {
+  // Promotional period: skip quota entirely (server-side, not bypassable)
+  if (new Date() < UNLIMITED_UNTIL) {
+    return { allowed: true, remaining: 999, isPro: true, resetAt: null };
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
