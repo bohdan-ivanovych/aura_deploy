@@ -16,6 +16,15 @@ interface ClickableWordTextProps {
 
 type Token = { type: 'word' | 'space'; value: string };
 type CardPreference = 'translation' | 'explanation' | 'both';
+type PopupPlacement = 'right' | 'left' | 'below' | 'above';
+
+interface PopupPos {
+  top: number;
+  left: number;
+  placement: PopupPlacement;
+  anchorX: number;
+  anchorY: number;
+}
 
 function tokenize(text: string): Token[] {
   const tokens: Token[] = [];
@@ -34,7 +43,6 @@ const LANG_CODE_TO_NAME: Record<string, string> = {
   hi: 'Hindi', ko: 'Korean', nl: 'Dutch', sv: 'Swedish',
 };
 
-// Module-level caches
 let cachedNativeLang: string | null = null;
 let cachedCardPref: CardPreference | null = null;
 let cachedExplanationLang: string | null = null;
@@ -61,7 +69,15 @@ async function getSettings(): Promise<{ nativeLang: string; cardPref: CardPrefer
 const translationCache = new Map<string, string>();
 const explanationCache = new Map<string, string>();
 
-export default function ClickableWordText({ text, voiceId, fullMessageText, magicHintWordIndices }: ClickableWordTextProps) {
+// ─── Layout constants ─────────────────────────────────────────────────────────
+const POPUP_W = 380;
+const POPUP_H_EST = 215; // rough height estimate for placement math
+const GAP = 10;  // gap between bubble edge and popup
+const MARGIN = 12;  // min distance from viewport edge
+
+export default function ClickableWordText({
+  text, voiceId, fullMessageText, magicHintWordIndices,
+}: ClickableWordTextProps) {
   const { theme } = useTheme();
   const isDark = theme !== 'light';
   const myId = useId();
@@ -73,18 +89,17 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
     if (!magicHintWordIndices?.length) return false;
     try { return localStorage.getItem('magic_hint_shown') !== 'true'; } catch { return false; }
   });
-  
   const magicHintSet = useMemo(() => new Set(magicHintWordIndices ?? []), [magicHintWordIndices]);
-  
+
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [translation, setTranslation] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [isTranslating, setIsTranslating] = useState(false);
   const [cardPref, setCardPref] = useState<CardPreference>('both');
-  
+
   const translateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [popupPos, setPopupPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [popupPos, setPopupPos] = useState<PopupPos | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const tokens = tokenize(text);
@@ -97,7 +112,6 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
 
   const hasSelection = selectedIndices.size > 0;
   const isPhrase = selectedIndices.size > 1;
-
   const showTranslation = cardPref === 'translation' || cardPref === 'both';
   const showExplanation = cardPref === 'explanation' || cardPref === 'both';
 
@@ -105,30 +119,23 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
     getSettings().then(({ cardPref: pref }) => setCardPref(pref));
   }, []);
 
+  // ─── Translation / explanation fetch ────────────────────────────────────────
   useEffect(() => {
     if (!hasSelection || !selectedText) {
-      setTranslation(null);
-      setExplanation(null);
-      setPopupPos(null);
-      return;
+      setTranslation(null); setExplanation(null); setPopupPos(null); return;
     }
-
     if (translateTimeoutRef.current) clearTimeout(translateTimeoutRef.current);
-    setTranslation(null);
-    setExplanation(null);
-    setIsTranslating(true);
+    setTranslation(null); setExplanation(null); setIsTranslating(true);
 
     translateTimeoutRef.current = setTimeout(async () => {
       try {
         const { nativeLang, explanationLang } = await getSettings();
-
         if (showTranslation) {
           if (translationCache.has(selectedText)) {
             setTranslation(translationCache.get(selectedText)!);
           } else {
             const res = await fetch('/api/translate', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ text: selectedText, targetLang: nativeLang }),
             });
             const data = await res.json();
@@ -137,154 +144,154 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
             setTranslation(t);
           }
         }
-
         if (showExplanation && !isPhrase) {
-          const explCacheKey = `${selectedText}|||${explanationLang}`;
-          if (explanationCache.has(explCacheKey)) {
-            setExplanation(explanationCache.get(explCacheKey)!);
+          const key = `${selectedText}|||${explanationLang}`;
+          if (explanationCache.has(key)) {
+            setExplanation(explanationCache.get(key)!);
           } else {
             const res = await fetch('/api/word-details', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ word: selectedText, contextSentence: fullMessageText }),
             });
             const data = await res.json();
             const e = data.explanation || '';
-            explanationCache.set(explCacheKey, e);
+            explanationCache.set(key, e);
             setExplanation(e);
           }
         }
-      } catch {
-        // Silently ignore
-      } finally {
-        setIsTranslating(false);
-      }
+      } catch { /* silent */ } finally { setIsTranslating(false); }
     }, 300);
 
-    return () => {
-      if (translateTimeoutRef.current) clearTimeout(translateTimeoutRef.current);
-    };
+    return () => { if (translateTimeoutRef.current) clearTimeout(translateTimeoutRef.current); };
   }, [selectedText, hasSelection, showTranslation, showExplanation, isPhrase, fullMessageText]);
 
+  // ─── Mobile event bridge ─────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    
     if (hasSelection && window.innerWidth < 768) {
       window.dispatchEvent(new CustomEvent('word-popup-open', {
-        detail: {
-          sourceId: myId,
-          word: selectedText,
-          translation,
-          explanation,
-          isTranslating,
-          isPhrase,
-          contextSentence: fullMessageText,
-          voiceId: voiceId ?? null,
-        },
+        detail: { sourceId: myId, word: selectedText, translation, explanation, isTranslating, isPhrase, contextSentence: fullMessageText, voiceId: voiceId ?? null },
       }));
     } else if (!hasSelection) {
       window.dispatchEvent(new CustomEvent('word-popup-close', { detail: { sourceId: myId } }));
     }
   }, [hasSelection, selectedText, translation, explanation, isTranslating, isPhrase, fullMessageText, voiceId, myId]);
 
-  // Handle cross-component clearing
+  // ─── Cross-component clear ───────────────────────────────────────────────────
   useEffect(() => {
-    const handleRemoteEvent = (e: CustomEvent) => {
+    const handle = (e: CustomEvent) => {
       if (e.type === 'magic-popup-open' || e.detail?.sourceId !== myId) {
         setSelectedIndices(new Set());
-        setTranslation(null);
-        setExplanation(null);
-        setIsPlayingAudio(false);
+        setTranslation(null); setExplanation(null); setIsPlayingAudio(false);
       }
     };
-    
-    window.addEventListener('word-popup-open', handleRemoteEvent as EventListener);
-    window.addEventListener('word-popup-close', handleRemoteEvent as EventListener);
-    window.addEventListener('magic-popup-open', handleRemoteEvent as EventListener);
+    window.addEventListener('word-popup-open', handle as EventListener);
+    window.addEventListener('word-popup-close', handle as EventListener);
+    window.addEventListener('magic-popup-open', handle as EventListener);
     return () => {
-      window.removeEventListener('word-popup-open', handleRemoteEvent as EventListener);
-      window.removeEventListener('word-popup-close', handleRemoteEvent as EventListener);
-      window.removeEventListener('magic-popup-open', handleRemoteEvent as EventListener);
+      window.removeEventListener('word-popup-open', handle as EventListener);
+      window.removeEventListener('word-popup-close', handle as EventListener);
+      window.removeEventListener('magic-popup-open', handle as EventListener);
     };
   }, [myId]);
 
+  // ─── Outside click ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!hasSelection) return;
-    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.word-token') || target.closest('.mobile-word-tray')) return;
+    const handle = (e: MouseEvent | TouchEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('.word-token') || t.closest('.mobile-word-tray') || t.closest('.word-popup-desktop')) return;
       window.dispatchEvent(new CustomEvent('word-popup-close', { detail: { sourceId: 'global' } }));
     };
-    document.addEventListener('pointerdown', handleOutsideClick, { capture: true });
-    return () => document.removeEventListener('pointerdown', handleOutsideClick, { capture: true });
+    document.addEventListener('pointerdown', handle, { capture: true });
+    return () => document.removeEventListener('pointerdown', handle, { capture: true });
   }, [hasSelection]);
 
+  // ─── Smart positioning ───────────────────────────────────────────────────────
+  // Priority: right-of-bubble → left-of-bubble → below-bubble → above-word
   const updatePosition = useCallback(() => {
     if (!hasSelection || !containerRef.current) return;
-    const selectedEls = Array.from(containerRef.current.querySelectorAll('.word-token[data-selected="true"]'));
-    if (selectedEls.length === 0) return;
-    
-    const firstRect = selectedEls[0].getBoundingClientRect();
-    const firstLineEls = selectedEls.filter(el => Math.abs(el.getBoundingClientRect().top - firstRect.top) < 10);
-    const lastInFirstLine = firstLineEls[firstLineEls.length - 1].getBoundingClientRect();
-    
-    let left = firstRect.left;
-    const maxLeft = window.innerWidth - 290;
-    
-    if (left > maxLeft) left = maxLeft;
-    if (left < 10) left = 10;
-    
-    setPopupPos({
-      top: firstRect.top,
-      left: left,
-      width: lastInFirstLine.right - firstRect.left
-    });
+    const els = Array.from(
+      containerRef.current.querySelectorAll<HTMLElement>('.word-token[data-selected="true"]'),
+    );
+    if (els.length === 0) return;
+
+    const wordRect = els[0].getBoundingClientRect();
+    const bubbleRect = containerRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const spaceRight = vw - bubbleRect.right - MARGIN;
+    const spaceLeft = bubbleRect.left - MARGIN;
+    const spaceBelow = vh - bubbleRect.bottom - MARGIN;
+    const spaceAbove = wordRect.top - MARGIN;
+
+    let placement: PopupPlacement;
+    let top = 0, left = 0;
+
+    if (spaceRight >= POPUP_W + GAP) {
+      // ── Right of bubble (AI messages, plenty of right-hand space) ──────────
+      placement = 'right';
+      left = bubbleRect.right + GAP;
+      top = Math.max(MARGIN, Math.min(wordRect.top - 8, vh - POPUP_H_EST - MARGIN));
+
+    } else if (spaceLeft >= POPUP_W + GAP) {
+      // ── Left of bubble (user messages on the right) ────────────────────────
+      placement = 'left';
+      left = bubbleRect.left - POPUP_W - GAP;
+      top = Math.max(MARGIN, Math.min(wordRect.top - 8, vh - POPUP_H_EST - MARGIN));
+
+    } else if (spaceBelow >= POPUP_H_EST + GAP) {
+      // ── Below the bubble ───────────────────────────────────────────────────
+      placement = 'below';
+      top = bubbleRect.bottom + GAP;
+      left = Math.max(MARGIN, Math.min(wordRect.left - 10, vw - POPUP_W - MARGIN));
+
+    } else {
+      // ── Last resort: above the selected word ───────────────────────────────
+      placement = 'above';
+      top = wordRect.top - GAP; // transform translateY(-100%) applied via style
+      left = Math.max(MARGIN, Math.min(wordRect.left - 10, vw - POPUP_W - MARGIN));
+    }
+
+    setPopupPos({ top, left, placement, anchorX: wordRect.left, anchorY: wordRect.top });
   }, [hasSelection]);
 
   useEffect(() => {
     updatePosition();
     let ticking = false;
-    
-    const handleScrollOrResize = () => {
+    const onEvent = () => {
       if (!ticking) {
-        window.requestAnimationFrame(() => {
-          updatePosition();
-          ticking = false;
-        });
+        window.requestAnimationFrame(() => { updatePosition(); ticking = false; });
         ticking = true;
       }
     };
-
-    window.addEventListener('resize', handleScrollOrResize);
-    window.addEventListener('scroll', handleScrollOrResize, { capture: true, passive: true });
+    window.addEventListener('resize', onEvent);
+    window.addEventListener('scroll', onEvent, { capture: true, passive: true });
     return () => {
-      window.removeEventListener('resize', handleScrollOrResize);
-      window.removeEventListener('scroll', handleScrollOrResize, { capture: true });
+      window.removeEventListener('resize', onEvent);
+      window.removeEventListener('scroll', onEvent, { capture: true });
     };
   }, [updatePosition]);
 
+  // ─── Interaction handlers ────────────────────────────────────────────────────
   const handleWordClick = useCallback((e: React.MouseEvent, idx: number, isMagicHint?: boolean) => {
     if (isMagicHint && magicHintActive) {
-      try { localStorage.setItem('magic_hint_shown', 'true'); } catch {}
+      try { localStorage.setItem('magic_hint_shown', 'true'); } catch { }
       setMagicHintActive(false);
     }
-    // Also trigger close for magic popup if we click a word
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('word-popup-open', { detail: { sourceId: myId } }));
-
+    window.dispatchEvent(new CustomEvent('word-popup-open', { detail: { sourceId: myId } }));
     setSelectedIndices(prev => {
       const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
       return next;
     });
   }, [magicHintActive, myId]);
 
   const clearSelection = useCallback(() => {
     setSelectedIndices(new Set());
-    setTranslation(null);
-    setExplanation(null);
-    setIsTranslating(false);
-    try { window.getSelection()?.removeAllRanges(); } catch {}
+    setTranslation(null); setExplanation(null); setIsTranslating(false);
+    try { window.getSelection()?.removeAllRanges(); } catch { }
     setIsPlayingAudio(false);
     window.speechSynthesis?.cancel();
     window.dispatchEvent(new CustomEvent('word-popup-close'));
@@ -292,21 +299,14 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
 
   const playAudio = async () => {
     if (!selectedText) return;
-
-    if (!('speechSynthesis' in window)) {
-      toast.error('Voice not supported in this browser');
-      return;
-    }
-
+    if (!('speechSynthesis' in window)) { toast.error('Voice not supported'); return; }
     setIsPlayingAudio(true);
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(selectedText);
-    utterance.lang = 'en-US';
-    
-    utterance.onend = () => setIsPlayingAudio(false);
-    utterance.onerror = () => setIsPlayingAudio(false);
-    
-    window.speechSynthesis.speak(utterance);
+    const utt = new SpeechSynthesisUtterance(selectedText);
+    utt.lang = 'en-US';
+    utt.onend = () => setIsPlayingAudio(false);
+    utt.onerror = () => setIsPlayingAudio(false);
+    window.speechSynthesis.speak(utt);
   };
 
   const saveFlashcard = async () => {
@@ -315,65 +315,68 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
     try {
       const { nativeLang } = await getSettings();
       let back = translation || '';
-      
       if (!back) {
         try {
           const r = await fetch('/api/translate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text: selectedText, targetLang: nativeLang }),
           });
-          const d = await r.json();
-          back = d.translated || '';
+          back = (await r.json()).translated || '';
         } catch { /* ignore */ }
       }
-      
       const res = await fetch('/api/create-flashcard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          front: selectedText,
-          back,
-          type: 'translation',
-          contextSentence: fullMessageText,
-          englishExplanation: explanation || null,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ front: selectedText, back, type: 'translation', contextSentence: fullMessageText, englishExplanation: explanation || null }),
       });
-      
       if (!res.ok) {
         const e = await res.json();
         if (e.error === 'Word already in your deck') {
           toast.info('Already in your deck', { description: `"${selectedText}" is saved.` });
-          clearSelection();
-          return;
+          clearSelection(); return;
         }
         throw new Error(e.error || 'Failed');
       }
-      
-      toast.success(isPhrase ? '📖 Phrase saved!' : '✨ Word saved!', {
-        description: `"${selectedText}" added to your deck.`,
-      });
-      
-      setSelectedIndices(new Set());
-      setTranslation(null);
-      setExplanation(null);
-      try { window.getSelection()?.removeAllRanges(); } catch {}
+      toast.success(isPhrase ? '📖 Phrase saved!' : '✨ Word saved!', { description: `"${selectedText}" added to your deck.` });
+      setSelectedIndices(new Set()); setTranslation(null); setExplanation(null);
+      try { window.getSelection()?.removeAllRanges(); } catch { }
       window.dispatchEvent(new CustomEvent('word-popup-close'));
     } catch (err) {
       toast.error('Sync failed', { description: err instanceof Error ? err.message : 'Unknown error' });
-    } finally {
-      setIsSaving(false);
-    }
+    } finally { setIsSaving(false); }
   };
 
-  const popupBg = isDark ? 'rgba(10,12,22,0.97)' : 'rgba(255,255,255,0.97)';
-  const popupBorder = isDark ? 'rgba(0,212,212,0.28)' : 'rgba(8,145,178,0.25)';
+  // ─── Theme tokens ────────────────────────────────────────────────────────────
+  const popupBg = isDark ? 'rgba(10,12,22,0.97)' : 'rgba(255,255,255,0.98)';
+  const popupBorder = isDark ? 'rgba(0,212,212,0.22)' : 'rgba(8,145,178,0.20)';
   const textColor = isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)';
-  const mutedColor = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
-  const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const actionHoverBg = isDark ? 'hover:bg-white/5' : 'hover:bg-black/5';
+  const mutedColor = isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.38)';
+  const divider = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
   const accentColor = isDark ? '#00d4d4' : '#0891b2';
+  const hoverCls = isDark ? 'hover:bg-white/5' : 'hover:bg-black/5';
 
+  // ─── Placement helpers ───────────────────────────────────────────────────────
+  const getTransform = (p: PopupPlacement) => (p === 'above' ? 'translateY(-100%)' : 'none');
+
+  const getMotionInitial = (p: PopupPlacement) => {
+    if (p === 'right') return { opacity: 0, x: -10, scale: 0.95 };
+    if (p === 'left') return { opacity: 0, x: 10, scale: 0.95 };
+    if (p === 'below') return { opacity: 0, y: -8, scale: 0.96 };
+    return { opacity: 0, y: 8, scale: 0.96 };
+  };
+
+  // Arrow connecting popup to message bubble
+  const Arrow = ({ p }: { p: PopupPlacement }) => {
+    const base: React.CSSProperties = {
+      position: 'absolute', width: 10, height: 10,
+      background: popupBg, transform: 'rotate(45deg)',
+    };
+    if (p === 'right') return <div style={{ ...base, left: -6, top: 20, borderLeft: `1px solid ${popupBorder}`, borderBottom: `1px solid ${popupBorder}` }} />;
+    if (p === 'left') return <div style={{ ...base, right: -6, top: 20, borderRight: `1px solid ${popupBorder}`, borderTop: `1px solid ${popupBorder}` }} />;
+    if (p === 'below') return <div style={{ ...base, top: -6, left: 20, borderLeft: `1px solid ${popupBorder}`, borderTop: `1px solid ${popupBorder}` }} />;
+    return <div style={{ ...base, bottom: -6, left: 20, borderRight: `1px solid ${popupBorder}`, borderBottom: `1px solid ${popupBorder}` }} />;
+  };
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="relative" ref={containerRef}>
       <p className="text-[14px] leading-[1.8] font-medium text-[var(--foreground)] tracking-[0.005em] select-none whitespace-pre-wrap after:content-[''] after:inline-block after:w-[46px] after:h-2">
@@ -386,18 +389,19 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
               key={idx}
               onClick={(e) => handleWordClick(e, idx, isMagicHint)}
               data-selected={isSelected}
-              className={`word-token cursor-pointer rounded-[3px] px-[1px] transition-all duration-100 ${
-                isSelected
-                  ? isDark ? 'text-cyan-200' : 'text-cyan-700'
-                  : isDark ? 'hover:bg-white/10 active:bg-white/15' : 'hover:bg-black/10 active:bg-black/15'
-              }`}
-              style={isSelected ? {
-                background: isDark ? 'rgba(0,212,212,0.22)' : 'rgba(8,145,178,0.14)',
-                boxShadow: `0 0 0 1px ${isDark ? 'rgba(0,212,212,0.4)' : 'rgba(8,145,178,0.35)'}`,
-              } : isMagicHint ? {
-                background: 'linear-gradient(90deg, rgba(45,156,219,0.35), rgba(155,81,224,0.35))',
-                borderRadius: '3px',
-              } : {}}
+              className={`word-token cursor-pointer rounded-[3px] px-[1px] transition-all duration-100 ${isSelected
+                ? isDark ? 'text-cyan-200' : 'text-cyan-700'
+                : isDark ? 'hover:bg-white/10 active:bg-white/15' : 'hover:bg-black/10 active:bg-black/15'
+                }`}
+              style={
+                isSelected ? {
+                  background: isDark ? 'rgba(0,212,212,0.22)' : 'rgba(8,145,178,0.14)',
+                  boxShadow: `0 0 0 1px ${isDark ? 'rgba(0,212,212,0.4)' : 'rgba(8,145,178,0.35)'}`,
+                } : isMagicHint ? {
+                  background: 'linear-gradient(90deg, rgba(45,156,219,0.35), rgba(155,81,224,0.35))',
+                  borderRadius: '3px',
+                } : {}
+              }
             >
               {token.value}
             </span>
@@ -405,34 +409,45 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
         })}
       </p>
 
+      {/* ── Desktop popup rendered in document.body portal ── */}
       {mounted && typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {hasSelection && popupPos && (
             <motion.div
               key="word-popup-desktop"
-              initial={{ opacity: 0, y: 6, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.94 }}
-              transition={{ type: 'spring', stiffness: 440, damping: 30 }}
-              className="hidden md:block fixed z-[99999] pointer-events-auto"
-              style={{ minWidth: '280px', top: popupPos.top - 10, left: popupPos.left, transform: 'translateY(-100%)' }}
+              className="word-popup-desktop hidden md:block fixed z-[99999] pointer-events-auto"
+              style={{
+                width: POPUP_W,
+                top: popupPos.top,
+                left: popupPos.left,
+                transform: getTransform(popupPos.placement),
+              }}
+              initial={getMotionInitial(popupPos.placement)}
+              animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.12 } }}
+              transition={{ type: 'spring', stiffness: 460, damping: 32 }}
             >
               <div
-                className="rounded-2xl overflow-hidden backdrop-blur-2xl bg-black/30 shadow-[0_8px_40px_rgba(0,0,0,0.3)] relative z-[9999]"
-                style={{ background: popupBg, border: `1px solid ${popupBorder}`, maxWidth: '320px', width: '100%' }}
+                className="rounded-2xl overflow-visible backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.28)] relative"
+                style={{ background: popupBg, border: `1px solid ${popupBorder}` }}
               >
-                <div className="px-3 pt-2.5 pb-2 flex items-center justify-between gap-2 border-b"
-                  style={{ borderColor: dividerColor }}>
+                {/* Directional arrow */}
+                <Arrow p={popupPos.placement} />
+
+                {/* Header */}
+                <div className="px-3 pt-2.5 pb-2 flex items-center justify-between gap-2 border-b" style={{ borderColor: divider }}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[11px] font-bold truncate max-w-[150px]" style={{ color: textColor }}>
+                    <span className="text-[11px] font-bold truncate max-w-[220px]" style={{ color: textColor }}>
                       "{selectedText}"
                     </span>
-                    <span className="text-[8px] font-black uppercase tracking-[0.2em] shrink-0 px-1.5 py-0.5 rounded-full"
+                    <span
+                      className="text-[8px] font-black uppercase tracking-[0.2em] shrink-0 px-1.5 py-0.5 rounded-full"
                       style={{
                         background: isPhrase ? 'rgba(224,64,251,0.18)' : `${accentColor}20`,
                         color: isPhrase ? '#e040fb' : accentColor,
                         border: `1px solid ${isPhrase ? 'rgba(224,64,251,0.3)' : `${accentColor}40`}`,
-                      }}>
+                      }}
+                    >
                       {isPhrase ? 'Phrase' : 'Word'}
                     </span>
                   </div>
@@ -441,8 +456,9 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
                   </button>
                 </div>
 
+                {/* Translation */}
                 {showTranslation && (
-                  <div className="px-3 py-2 border-b" style={{ borderColor: dividerColor, minHeight: '32px' }}>
+                  <div className="px-3 py-2 border-b" style={{ borderColor: divider, minHeight: 38 }}>
                     <p className="text-[8px] font-bold uppercase tracking-[0.15em] mb-1" style={{ color: mutedColor }}>Translation</p>
                     {isTranslating ? (
                       <div className="flex items-center gap-1.5">
@@ -457,11 +473,17 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
                   </div>
                 )}
 
+                {/* Usage */}
                 {showExplanation && !isPhrase && (
-                  <div className="px-3 py-2 border-b" style={{ borderColor: dividerColor, minHeight: '32px' }}>
+                  <div className="px-3 py-2 border-b" style={{ borderColor: divider, minHeight: 38 }}>
                     <p className="text-[8px] font-bold uppercase tracking-[0.15em] mb-1" style={{ color: mutedColor }}>Usage</p>
                     {isTranslating ? (
-                      <div className="w-full h-3 rounded animate-pulse" style={{ background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }} />
+                      <div className="space-y-1.5">
+                        {[1, 0.72, 0.5].map((w, i) => (
+                          <div key={i} className="h-2.5 rounded animate-pulse"
+                            style={{ width: `${w * 100}%`, background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }} />
+                        ))}
+                      </div>
                     ) : (
                       <p className="text-[11px] leading-relaxed italic" style={{ color: mutedColor }}>
                         {explanation || '—'}
@@ -470,11 +492,12 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
                   </div>
                 )}
 
+                {/* Actions */}
                 <div className="flex items-center">
                   <button
                     onClick={playAudio}
                     disabled={isPlayingAudio}
-                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-all flex-1 disabled:opacity-50 ${actionHoverBg}`}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-all flex-1 disabled:opacity-50 ${hoverCls}`}
                     style={{ color: mutedColor }}
                   >
                     {isPlayingAudio
@@ -482,11 +505,11 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
                       : <Volume2 className="w-3.5 h-3.5 shrink-0" style={{ color: accentColor }} />}
                     Play
                   </button>
-                  <div className="h-8 w-px shrink-0" style={{ background: dividerColor }} />
+                  <div className="h-8 w-px shrink-0" style={{ background: divider }} />
                   <button
                     onClick={saveFlashcard}
                     disabled={isSaving}
-                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold transition-all flex-1 disabled:opacity-50 ${actionHoverBg}`}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold transition-all flex-1 disabled:opacity-50 ${hoverCls}`}
                     style={{ color: accentColor }}
                   >
                     {isSaving
@@ -496,16 +519,10 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
                   </button>
                 </div>
               </div>
-              <div className="absolute left-5 -bottom-[5px] w-2.5 h-2.5 rotate-45"
-                style={{
-                  background: popupBg,
-                  borderRight: `1px solid ${popupBorder}`,
-                  borderBottom: `1px solid ${popupBorder}`,
-                }} />
             </motion.div>
           )}
         </AnimatePresence>,
-        document.body
+        document.body,
       )}
     </div>
   );
