@@ -39,6 +39,8 @@ export interface ShortVideoContext {
   transcription: string | null;
   visionAnalysis: string | null;
   thumbnailUrl: string | null;
+  /** True when no video content could be extracted — LLM should ask user to describe the video */
+  hasNoContext?: boolean;
   error?: string;
 }
 
@@ -97,9 +99,10 @@ async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promi
 }
 
 /**
- * Instagram Reels — uses yt-dlp-wrap.
+ * Instagram Reels — uses yt-dlp-wrap with graceful fallback.
+ * If yt-dlp fails (ENOENT / network), returns minimal meta and signals no context.
  */
-async function fetchReelsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta> {
+async function fetchReelsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta & { _noContext?: boolean }> {
   try {
     const info = await ytDlp.getVideoInfo(url);
     const bestAudio = info.formats?.filter((f: any) => f.acodec !== 'none')?.sort((a: any, b: any) => (b.tbr || 0) - (a.tbr || 0))[0];
@@ -111,9 +114,11 @@ async function fetchReelsMeta(url: string, fallbackTitle: string | null): Promis
       coverUrl: info.thumbnail || null,
       fileSizeBytes: null,
     };
-  } catch (err) {
-    console.warn('[VideoProcessor:reels] yt-dlp failed:', err);
-    return { title: fallbackTitle, authorName: null, playUrl: null, coverUrl: null };
+  } catch (err: any) {
+    const isEnv = err?.code === 'ENOENT' || String(err).includes('ENOENT') || String(err).includes('spawn');
+    console.warn(`[VideoProcessor:reels] yt-dlp failed${isEnv ? ' (yt-dlp not in PATH)' : ''}:`, err);
+    // Signal caller that no content is available so LLM can ask user to describe the video
+    return { title: fallbackTitle, authorName: null, playUrl: null, coverUrl: null, _noContext: true };
   }
 }
 
@@ -171,7 +176,7 @@ async function runTranscriptionPipeline(
       console.log(`[VideoProcessor:${result.platform}] Running Vision API on thumbnail...`);
 
       const { text } = await generateText({
-        model: googleProvider('gemini-1.5-flash'),
+        model: googleProvider('gemini-2.0-flash'),
         messages: [
           {
             role: 'user',
@@ -240,7 +245,11 @@ export async function processShortVideo(
     } else if (platform === 'shorts') {
       meta = await fetchShortsMeta(cleanUrl, fallbackTitle);
     } else {
-      meta = await fetchReelsMeta(cleanUrl, fallbackTitle);
+      const reelsMeta = await fetchReelsMeta(cleanUrl, fallbackTitle);
+      if ((reelsMeta as any)._noContext) {
+        result.hasNoContext = true;
+      }
+      meta = reelsMeta;
     }
 
     result.title = meta.title || fallbackTitle;

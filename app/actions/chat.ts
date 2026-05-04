@@ -627,6 +627,40 @@ export async function sendMessageStream(
           });
         }
 
+        // Task 7: Skill tree update every 5 messages
+        const sessionMsgCountForSkill = await prisma.message.count({
+          where: { chatSessionId: session.id, sender: 'USER' },
+        });
+        if (sessionMsgCountForSkill > 0 && sessionMsgCountForSkill % 5 === 0) {
+          // Boost practiced skill progress proportional to quality
+          const qualityScore = Math.round(
+            ((vocabScore ?? 60) + (grammarScore ?? 60) + (fluencyScore ?? 60)) / 3
+          );
+          // delta: 1-15 based on quality (1=low, 15=high)
+          const delta = Math.max(1, Math.min(15, Math.round((qualityScore / 100) * 15)));
+
+          // Get user's active skill nodes and increment correct count
+          const activeSkillNodes = await prisma.userSkillProgress.findMany({
+            where: { userId: userRecord.id, practiced: { gt: 0 } },
+            take: 10,
+            orderBy: { updatedAt: 'desc' },
+          });
+
+          if (activeSkillNodes.length > 0) {
+            await Promise.all(
+              activeSkillNodes.slice(0, 3).map(node =>
+                prisma.userSkillProgress.update({
+                  where: { userId_nodeSlug: { userId: userRecord.id, nodeSlug: node.nodeSlug } },
+                  data: { correct: { increment: delta } },
+                }).catch(() => null)
+              )
+            );
+          }
+
+          // Emit skill-tree-updated event so client can refresh
+          enqueue(sseEvent('skill_tree_updated', { delta, sessionMsgCount: sessionMsgCountForSkill }));
+        }
+
         // Final stats event
         enqueue(sseEvent('stats', {
           depthDelta,

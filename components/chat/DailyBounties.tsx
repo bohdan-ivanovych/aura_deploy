@@ -162,6 +162,9 @@ export function DailyBounties({ isCompactView = false }: DailyBountiesProps) {
                     background: 'var(--sidebar-bg)',
                     border: '1px solid var(--border)',
                     boxShadow: 'var(--shadow-xl)',
+                    backdropFilter: 'blur(40px)',
+                    WebkitBackdropFilter: 'blur(40px)',
+                    backgroundColor: 'rgba(0,0,0,0.55)',
                     backfaceVisibility: 'hidden' as const,
                     isolation: 'isolate'
                   }}

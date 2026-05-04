@@ -263,7 +263,11 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
     };
   }, [updatePosition]);
 
-  const handleWordClick = useCallback((idx: number, isMagicHint?: boolean) => {
+  const handleWordClick = useCallback((e: React.MouseEvent, idx: number, isMagicHint?: boolean) => {
+    // Task 1: abort if click originated inside an AI message bubble
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-ai-bubble]')) return;
+
     if (isMagicHint && magicHintActive) {
       try { localStorage.setItem('magic_hint_shown', 'true'); } catch {}
       setMagicHintActive(false);
@@ -384,7 +388,7 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
           return (
             <span
               key={idx}
-              onClick={() => handleWordClick(idx, isMagicHint)}
+              onClick={(e) => handleWordClick(e, idx, isMagicHint)}
               data-selected={isSelected}
               className={`word-token cursor-pointer rounded-[3px] px-[1px] transition-all duration-100 ${
                 isSelected
@@ -418,7 +422,7 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
               style={{ minWidth: '280px', top: popupPos.top - 10, left: popupPos.left, transform: 'translateY(-100%)' }}
             >
               <div
-                className="rounded-2xl overflow-hidden backdrop-blur-2xl shadow-[0_8px_40px_rgba(0,0,0,0.3)] relative z-[9999]"
+                className="rounded-2xl overflow-hidden backdrop-blur-2xl bg-black/30 shadow-[0_8px_40px_rgba(0,0,0,0.3)] relative z-[9999]"
                 style={{ background: popupBg, border: `1px solid ${popupBorder}`, maxWidth: '320px', width: '100%' }}
               >
                 <div className="px-3 pt-2.5 pb-2 flex items-center justify-between gap-2 border-b"

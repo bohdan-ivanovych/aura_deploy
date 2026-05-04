@@ -55,7 +55,7 @@ weaknessIdentified: one canonical tag from this list ONLY:
   (Or null if no error)
 
 strengthIdentified: brief praise of a genuinely strong construction, or null
-vocabularyNote: ONLY for genuinely inappropriate word choices (e.g., swear words, overly formal words in casual context, words that change meaning incorrectly). Provide a BETTER alternative in format: "In this situation, it's better to say '[alternative]' instead of '[word]' because [reason].". null if the word choice is acceptable.
+vocabularyNote: Return at most ONE vocabularyNote per response — choose the single most impactful word or phrase the user used or should learn. ONLY flag genuinely inappropriate word choices (e.g., swear words, overly formal words in casual context, words that change meaning). Provide: "In this situation, it's better to say '[alternative]' instead of '[word]' because [reason].". null if acceptable.
 vibeNote: ONLY for genuinely inappropriate tone (e.g., extremely rude, threatening). Provide a correction in format: "In this situation, it's better to say '[alternative]' instead of '[phrase]' because [reason].". null if the tone is acceptable.
 userLevel: estimate CEFR from latest message: "A1"|"A2"|"B1"|"B2"|"C1"|"C2"
 vocabScore/complexityScore/fluencyScore/grammarScore/accuracyScore: 0-100 integers
@@ -253,10 +253,10 @@ export async function generateChatResponse({
       ? `[SYSTEM — ${platformLabel.toUpperCase()} CONTEXT]: User shared a ${platformLabel} video.
 ${ _videoCtx?.title ? `Title: "${ _videoCtx.title}"` : ''}
 ${_videoCtx?.authorName ? `Creator: @${_videoCtx.authorName}` : ''}
-${_videoCtx?.transcription ? `[VIDEO AUDIO TRANSCRIPT]:\n"${_videoCtx.transcription}"\n` : ''}
+${ _videoCtx?.transcription ? `[VIDEO AUDIO TRANSCRIPT]:\n"${ _videoCtx.transcription}"\n` : ''}
 ${_videoCtx?.visionAnalysis ? `[VIDEO VISUAL DESCRIPTION]:\n"${_videoCtx.visionAnalysis}"\n` : ''}
-${(!_videoCtx?.transcription && !_videoCtx?.visionAnalysis) ? `(No audio transcription or visual description available. React naturally as if you saw a generic video by this creator on ${platformLabel}).` : ''}
-React to the CONTENT AND TOPIC of this multimodal data as your persona. Engage with what actually happens/is said in the video. Be emotional, funny, or provocative in character. grammarCorrection MUST be null. ZERO teacher-speak.`
+${(_videoCtx?.hasNoContext || (!_videoCtx?.transcription && !_videoCtx?.visionAnalysis)) ? `(No video content was extractable. Ask the user to describe what they are watching before responding — do NOT fabricate reactions to unseen content. grammarCorrection MUST be null.)` : ''}
+React to the CONTENT AND TOPIC of this multimodal data as your persona. Be emotional, funny, or provocative in character. grammarCorrection MUST be null. ZERO teacher-speak.`
       : '',
     SYSTEM_PROMPT
       .replace(/\[PERSONA_NAME\]/g, persona.name)
@@ -311,6 +311,11 @@ React to the CONTENT AND TOPIC of this multimodal data as your persona. Engage w
   // Ensure completedQuestIds is an array
   if (parsedMeta.completedQuestIds && !Array.isArray(parsedMeta.completedQuestIds)) {
     parsedMeta.completedQuestIds = [];
+  }
+
+  // Task 8: enforce max 1 vocabularyNote — if LLM returned an array, take only first item
+  if (Array.isArray(parsedMeta.vocabularyNote)) {
+    parsedMeta.vocabularyNote = (parsedMeta.vocabularyNote as unknown as string[])[0] ?? null;
   }
 
   return { bubbles, parsedMeta };
