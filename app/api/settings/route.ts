@@ -92,8 +92,10 @@ export async function POST(req: Request) {
         ...(typeof body.name === 'string' && body.name.trim() ? { name: body.name.trim() } : {}),
         ...(typeof body.stealthInjectVocab === 'boolean' ? { stealthInjectVocab: body.stealthInjectVocab } : {}),
         ...(typeof body.stealthInjectGrammar === 'boolean' ? { stealthInjectGrammar: body.stealthInjectGrammar } : {}),
-        // Fallback for types because Prisma might not know about email yet 
-        ...(typeof body.email === 'string' ? { email: body.email.trim().toLowerCase() } : {}),
+        // Fallback for types because Prisma might not know about email yet
+        ...(typeof body.email === 'string' && body.email.trim() && body.email.includes('@')
+          ? { email: body.email.trim().toLowerCase() }
+          : {}),
       } as any,
     });
 
