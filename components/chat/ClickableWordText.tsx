@@ -264,10 +264,6 @@ export default function ClickableWordText({ text, voiceId, fullMessageText, magi
   }, [updatePosition]);
 
   const handleWordClick = useCallback((e: React.MouseEvent, idx: number, isMagicHint?: boolean) => {
-    // Task 1: abort if click originated inside an AI message bubble
-    const target = e.target as HTMLElement;
-    if (target.closest('[data-ai-bubble]')) return;
-
     if (isMagicHint && magicHintActive) {
       try { localStorage.setItem('magic_hint_shown', 'true'); } catch {}
       setMagicHintActive(false);

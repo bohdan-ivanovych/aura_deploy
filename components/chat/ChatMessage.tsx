@@ -284,7 +284,6 @@ export const ChatMessage = memo(function ChatMessage({
                 <div
                   key={idx}
                   className={`relative px-4 py-3 transition-all ${reelMode && isAI ? 'select-text' : 'select-none'}`}
-                  {...(isAI ? { 'data-ai-bubble': 'true' } : {})}
                   style={isAI ? {
                     background: 'var(--bubble-ai-bg)', border: '1px solid var(--bubble-ai-border)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), var(--bubble-ai-shadow)', isolation: 'isolate', WebkitTouchCallout: reelMode ? 'default' : 'none', userSelect: reelMode ? 'text' : 'none', WebkitUserSelect: reelMode ? 'text' : 'none', ...currentBorderRadius,
                   } : {
