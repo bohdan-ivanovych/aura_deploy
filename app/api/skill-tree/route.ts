@@ -48,7 +48,7 @@ export async function GET() {
 
     const recentThreshold = new Date(Date.now() - 30 * 60 * 1000);
 
-    const [userWithNodes, nodes, progressRows, recentWeaknesses] = await Promise.all([
+    const [userWithNodes, nodes, progressRows, recentWeaknesses, totalUserMsgs] = await Promise.all([
       prisma.user.findUnique({
         where: { id: user.id },
         select: { unlockedNodes: { select: { id: true } } },
@@ -64,6 +64,9 @@ export async function GET() {
       prisma.grammarWeakness.findMany({
         where: { userId: user.id, lastSeen: { gte: recentThreshold } },
         select: { rule: true },
+      }),
+      prisma.message.count({
+        where: { chatSessionId: { in: (await prisma.chatSession.findMany({ where: { userId: user.id }, select: { id: true } })).map(s => s.id) }, sender: 'USER' },
       }),
     ]);
 
@@ -105,13 +108,19 @@ export async function GET() {
         correct,
         progressPct,
         recentlyIdentified,
+        keywords: keywordsBySlug.get(node.slug) ?? [],
       };
     });
 
+    // Calculate how many messages until next skill audit (every 10 USER messages)
+    const msgsToNextAudit = 10 - (totalUserMsgs % 10);
+
     return NextResponse.json({
       nodes: result,
+      userDepth: user.diveDepth ?? 0,
       userXp: user.xp,
       unlockedCount: unlockedIds.size,
+      msgsToNextAudit,
     });
   } catch (error) {
     console.error('API skill-tree GET error', error);

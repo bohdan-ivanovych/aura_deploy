@@ -18,6 +18,7 @@ import { NetworkStatus } from "@/components/ui/NetworkStatus";
 import { MobileWordTray } from "@/components/chat/MobileWordTray";
 import { AuroraBackground } from "@/components/ui/AuroraBackground";
 import { GlassRefractionFilter } from "@/components/ui/GlassRefractionFilter";
+import { SWUpdateToast } from "@/components/ui/SWUpdateToast";
 
 const sora = Sora({
   subsets: ["latin"],
@@ -126,6 +127,7 @@ export default function RootLayout({
                       <NetworkStatus />
         <MobileWordTray />
                       <LevelUpCelebration />
+                      <SWUpdateToast />
                       <PWAInstallModal />
                       <div className="flex h-[100dvh] w-full overflow-hidden">
                         {/* Sidebar - Desktop Only (Floating Island) */}

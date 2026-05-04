@@ -9,7 +9,7 @@ const MESSAGE_SELECT = {
   sender: true,
   grammarCorrection: true,
   weaknessIdentified: true,
-  bonusXP: true,
+  xpReward: true,
   createdAt: true,
   edited: true,
   originalText: true,

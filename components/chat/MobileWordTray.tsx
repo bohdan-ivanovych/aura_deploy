@@ -68,29 +68,20 @@ export function MobileWordTray() {
       e.stopPropagation();
     }
     if (!payload || isPlayingAudio) return;
-    const key = `${payload.word}|||${payload.voiceId ?? 'default'}`;
-    setIsPlayingAudio(true);
-    try {
-      let url = audioUrlCache.get(key);
-      if (!url) {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: payload.word, voiceId: payload.voiceId ?? null }),
-        });
-        if (!res.ok) throw new Error('TTS failed');
-        const blob = await res.blob();
-        url = URL.createObjectURL(blob);
-        audioUrlCache.set(key, url);
-      }
-      const audio = new Audio(url);
-      audio.onended = () => setIsPlayingAudio(false);
-      audio.onerror = () => setIsPlayingAudio(false);
-      await audio.play();
-    } catch {
-      setIsPlayingAudio(false);
-      toast.error('Could not play audio');
+    if (!('speechSynthesis' in window)) {
+      toast.error('Voice not supported in this browser');
+      return;
     }
+    
+    setIsPlayingAudio(true);
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(payload.word);
+    utterance.lang = 'en-US';
+    
+    utterance.onend = () => setIsPlayingAudio(false);
+    utterance.onerror = () => setIsPlayingAudio(false);
+    
+    window.speechSynthesis.speak(utterance);
   };
 
   const saveCard = async (e?: React.MouseEvent) => {
@@ -221,6 +212,7 @@ export function MobileWordTray() {
               {payload.explanation && (
                 <div className="px-4 py-2.5"
                   style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.3)' }}>Can be used as / for...</p>
                   <p className="text-[12px] leading-snug italic"
                     style={{ color: isDark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.38)' }}>
                     {payload.explanation}

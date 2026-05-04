@@ -29,7 +29,6 @@ export async function GET() {
       prisma.user.findUnique({
         where: { id: user.id },
         select: {
-          currentHP: true,
           diveDepth: true,
           maxDiveDepth: true,
           streak: true,
@@ -71,7 +70,6 @@ export async function GET() {
     const hasEnoughData = messageCount >= 2;
 
     const stats = {
-      currentHP: userWithNodes.currentHP ?? 100,
       diveDepth: userWithNodes.diveDepth,
       maxDiveDepth: userWithNodes.maxDiveDepth,
       streak: userWithNodes.streak ?? 0,

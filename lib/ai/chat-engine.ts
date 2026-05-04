@@ -5,7 +5,8 @@ import {
   buildConversationXml,
   buildPromptReminder,
 } from './prompt-guard';
-import { FullTikTokContext } from '@/lib/ai/tiktok-processor';
+import { ShortVideoContext } from '@/lib/ai/video-processor';
+import { logDev } from '@/lib/utils/logger';
 
 import { CHAT_MAX_COMPLETION_TOKENS as MAX_COMPLETION_TOKENS } from '@/src/config/gameplayConfig';
 
@@ -34,23 +35,28 @@ CRITICAL: You MUST ALWAYS detect basic syntax errors (subject-verb agreement, wr
 
 grammarCorrection rules:
 - internalGrammarCheck: A short step-by-step thought process of checking the user's sentence for errors. MUST do this FIRST.
-- grammarCorrection: null if no obvious grammatical error. If an error exists, use EXACTLY this format: "❌ [wrong phrase] → ✅ [correct phrase] — [brief rule in [EXPLANATION_LANGUAGE]]"
-- Example: "❌ I have went → ✅ I have gone — present perfect requires past participle"
+- grammarCorrection: null if no obvious grammatical error. If an error exists, use EXACTLY this format: "❌ [wrong phrase] → ✅ [correct phrase] — [EXPLAIN THE RULE IN {{EXPLANATION_LANGUAGE}}]"
+- Example: "❌ I have went → ✅ I have gone — [Explanation of present perfect rule translated into {{EXPLANATION_LANGUAGE}}]"
 - NEVER copy your conversational reply text here.
+- DO NOT correct slang (e.g. "sigma", "gonna"), abbreviations (e.g. "ok", "u"), capitalization, or punctuation. Only fix real grammar/vocabulary mistakes.
 
 errorSpan: {"original": "exact wrong words from user", "corrected": "fixed version"} or null
+- "original" MUST be an exact substring from the user's text.
+- Include surrounding words if needed for context (e.g. original: "How is you", corrected: "How are you"). DO NOT just put one word if it's ambiguous.
+- NEVER put your chat reply in "corrected". "corrected" is exclusively for the grammatically fixed version of the user's text.
+- If no grammar error exists, errorSpan MUST be null.
 weaknessIdentified: one canonical tag from this list ONLY:
   present simple | past simple | present perfect | past perfect | future tense |
   continuous aspect | modal verbs | conditionals | passive voice | gerund vs infinitive |
   third person -s | irregular verbs | auxiliary verbs | word order | subject-verb agreement |
   articles | countable nouns | prepositions of time | prepositions of place | prepositions |
-  pronouns | comparatives | double negative | false cognate | collocation
+  pronouns | comparatives | double negative | false cognate | vocabulary | collocation
   (If the mistake is grammatical, DO NOT select 'vocabulary'. Select the exact grammar rule. Only use 'vocabulary' for pure wrong word choices).
   (Or null if no error)
 
-vocabularyNote: ONLY for genuinely inappropriate word choices (e.g., swear words, overly formal words in casual context, words that change meaning incorrectly). Provide a BETTER alternative in format: "Better to say '[alternative]' instead of '[word]' because [reason].". null if the word choice is acceptable.
-
 strengthIdentified: brief praise of a genuinely strong construction, or null
+vocabularyNote: ONLY for genuinely inappropriate word choices (e.g., swear words, overly formal words in casual context, words that change meaning incorrectly). Provide a BETTER alternative in format: "In this situation, it's better to say '[alternative]' instead of '[word]' because [reason].". null if the word choice is acceptable.
+vibeNote: ONLY for genuinely inappropriate tone (e.g., extremely rude, threatening). Provide a correction in format: "In this situation, it's better to say '[alternative]' instead of '[phrase]' because [reason].". null if the tone is acceptable.
 userLevel: estimate CEFR from latest message: "A1"|"A2"|"B1"|"B2"|"C1"|"C2"
 vocabScore/complexityScore/fluencyScore/grammarScore/accuracyScore: 0-100 integers
 
@@ -71,6 +77,8 @@ Return ONLY valid JSON. No markdown, no extra text.
   "weaknessIdentified": null,
   "errorSpan": null,
   "strengthIdentified": null,
+  "vocabularyNote": null,
+  "vibeNote": null,
   "vocabScore": 70,
   "complexityScore": 65,
   "fluencyScore": 75,
@@ -137,6 +145,9 @@ function parseAIReply(raw: string): { bubbles: string[], meta: Partial<AIRespons
           if (parsed.message && !parsed.reply) parsed.reply = parsed.message;
           bubbles = Array.isArray(parsed.bubbles) ? parsed.bubbles : (parsed.reply ? [parsed.reply] : []);
           meta = parsed;
+          if (meta.completedQuestIds && !Array.isArray(meta.completedQuestIds)) {
+            meta.completedQuestIds = [];
+          }
         } catch {
           // Final fallback
           bubbles = [raw];
@@ -159,6 +170,8 @@ export interface AIResponse {
   grammarCorrection: string | null;
   weaknessIdentified: string | null;
   strengthIdentified: string | null;
+  vocabularyNote: string | null;
+  vibeNote: string | null;
   suggestion?: string | null;
   levelAdjustment?: number;
   errorSpan?: { original: string; corrected: string } | null;
@@ -178,10 +191,15 @@ export interface GenerateChatParams {
   userRecord: { nativeLanguage: string | null; explanationLanguage: string | null; diveDepth: number | null };
   reactionInject: string;
   weaknessSummary: string;
-  memoryContext?: string; // Optional long-term memory injection
-  activeQuests?: Array<{ id: string; title: string; description: string }>;
-  isTikTok?: boolean; // Suppresses grammar analysis
-  tiktokContext?: FullTikTokContext | null;
+  memoryContext?: string;
+  activeQuests?: Array<{ id: string; title: string; description: string; progress?: number }>;
+  /** True when the user shared any short-form video URL (TikTok / Shorts / Reels) */
+  isShortVideo?: boolean;
+  /** @deprecated Use isShortVideo instead */
+  isTikTok?: boolean;
+  shortVideoContext?: ShortVideoContext | null;
+  /** @deprecated Use shortVideoContext instead */
+  tiktokContext?: ShortVideoContext | null;
   stealthTargets?: any;
 }
 
@@ -194,49 +212,65 @@ export async function generateChatResponse({
   weaknessSummary,
   memoryContext = '',
   activeQuests = [],
-  isTikTok = false,
-  tiktokContext = null,
+  isShortVideo = false,
+  isTikTok = false, // backwards-compat
+  shortVideoContext = null,
+  tiktokContext = null, // backwards-compat
   stealthTargets = null,
 }: GenerateChatParams): Promise<{ bubbles: string[]; parsedMeta: Partial<AIResponse> }> {
+  // Normalize: support both old isTikTok / tiktokContext and new isShortVideo / shortVideoContext
+  const _isShortVideo = isShortVideo || isTikTok;
+  const _videoCtx = shortVideoContext || tiktokContext;
   const explanationLang = userRecord.explanationLanguage === 'native'
     ? (userRecord.nativeLanguage || 'English')
     : 'English';
 
   const questsStr = activeQuests.length > 0
-    ? `\nACTIVE QUESTS FOR THIS USER:\n${activeQuests.map(q => `- UUID: ${q.id} | Title: "${q.title}" | Task: ${q.description}`).join('\n')}\nIf the user successfully completes any of these tasks in their latest message, add the UUID to 'completedQuestIds' array.`
+    ? `\nACTIVE QUESTS FOR THIS USER:\n${activeQuests.map(q => `- UUID: ${q.id} | Title: "${q.title}" | Task: ${q.description} | Current Progress: ${q.progress || 0}`).join('\n')}\nCRITICAL: Track quest progress on EVERY message.\n- EVERY message the user sends counts toward message-count quests (e.g., "Send 5 messages").\n- If they use required vocabulary/grammar correctly, mark those quests as complete.\n- Return quest UUIDs in 'completedQuestIds' array when a quest is FULLY complete.\n- For partial progress, you don't need to track it - just mark complete when done.`
     : '';
+
+  const platformLabels: Record<string, string> = {
+    tiktok: 'TikTok',
+    shorts: 'YouTube Shorts',
+    reels: 'Instagram Reels',
+  };
+  const platformLabel = _videoCtx?.platform ? (platformLabels[_videoCtx.platform] || 'TikTok') : 'TikTok';
 
   const systemPromptStr = [
     INJECTION_GUARD,
     '',
-    memoryContext, // long-term memory injected before persona
+    memoryContext,
     reactionInject,
     persona.systemPrompt
       ? `PERSONA: ${persona.systemPrompt}`
       : `PERSONA: You are ${persona.name}, a confident, witty person with strong opinions.`,
     `Native language of user: ${userRecord.nativeLanguage || 'English'}`,
-    `[EXPLANATION_LANGUAGE] = ${explanationLang}`,
+    `{{EXPLANATION_LANGUAGE}} = ${explanationLang}`,
     `User depth level: ${userRecord.diveDepth ?? 0}/200`,
     weaknessSummary,
     questsStr,
-    isTikTok
-      ? `[SYSTEM — TIKTOK CONTEXT]: User shared a TikTok video.
-${tiktokContext?.title ? `Title: "${tiktokContext.title}"` : ''}
-${tiktokContext?.authorName ? `Creator: @${tiktokContext.authorName}` : ''}
-${tiktokContext?.transcription ? `[VIDEO AUDIO TRANSCRIPT]:\n"${tiktokContext.transcription}"\n` : ''}
-${tiktokContext?.visionAnalysis ? `[VIDEO VISUAL DESCRIPTION]:\n"${tiktokContext.visionAnalysis}"\n` : ''}
-${(!tiktokContext?.transcription && !tiktokContext?.visionAnalysis) ? '(No audio transcription or visual description available. React naturally as if you saw a generic video by this creator).' : ''}
+    _isShortVideo
+      ? `[SYSTEM — ${platformLabel.toUpperCase()} CONTEXT]: User shared a ${platformLabel} video.
+${ _videoCtx?.title ? `Title: "${ _videoCtx.title}"` : ''}
+${_videoCtx?.authorName ? `Creator: @${_videoCtx.authorName}` : ''}
+${_videoCtx?.transcription ? `[VIDEO AUDIO TRANSCRIPT]:\n"${_videoCtx.transcription}"\n` : ''}
+${_videoCtx?.visionAnalysis ? `[VIDEO VISUAL DESCRIPTION]:\n"${_videoCtx.visionAnalysis}"\n` : ''}
+${(!_videoCtx?.transcription && !_videoCtx?.visionAnalysis) ? `(No audio transcription or visual description available. React naturally as if you saw a generic video by this creator on ${platformLabel}).` : ''}
 React to the CONTENT AND TOPIC of this multimodal data as your persona. Engage with what actually happens/is said in the video. Be emotional, funny, or provocative in character. grammarCorrection MUST be null. ZERO teacher-speak.`
       : '',
     SYSTEM_PROMPT
       .replace(/\[PERSONA_NAME\]/g, persona.name)
-      .replace(/\[EXPLANATION_LANGUAGE\]/g, explanationLang),
+      .replace(/\{\{EXPLANATION_LANGUAGE\}\}/g, explanationLang),
   ].filter(Boolean).join('\n');
 
   const safeUserText = sanitizeUserInput(text);
   const conversationXml = buildConversationXml(history as any);
   const reminder = buildPromptReminder(persona.name);
-  const userPrompt = `${conversationXml}\n\n<user_message>${safeUserText}</user_message>${reminder}`;
+  const userPrompt = `${conversationXml}\n\n<user_message>${safeUserText}</user_message>${reminder}\n\n[SYSTEM]: You must output ONLY a valid JSON object matching the required schema. Start your response with {`;
+
+  // TikTok / Shorts / Reels requests have a larger system prompt (transcript ~1200 chars) and need
+  // more output tokens to produce the full JSON response without truncation.
+  const effectiveMaxTokens = _isShortVideo ? Math.max(MAX_COMPLETION_TOKENS, 750) : MAX_COMPLETION_TOKENS;
 
   const rawContent = await makeAICompletion({
     messages: [
@@ -244,12 +278,35 @@ React to the CONTENT AND TOPIC of this multimodal data as your persona. Engage w
       { role: 'user', content: userPrompt },
     ],
     temperature: 0.80,
-    maxTokens: MAX_COMPLETION_TOKENS,
+    maxTokens: effectiveMaxTokens,
     responseFormat: { type: 'json_object' },
     timeoutMs: 20_000,
   });
 
+  // Diagnostic: log prompt sizes on short video requests (helps catch token overflow)
+  if (_isShortVideo) {
+    logDev('AI:ShortVideoPromptSizes', {
+      platform: _videoCtx?.platform ?? 'tiktok',
+      systemPromptChars: systemPromptStr.length,
+      userPromptChars: userPrompt.length,
+      hasTranscription: !!_videoCtx?.transcription,
+      hasVision: !!_videoCtx?.visionAnalysis,
+      transcriptionChars: _videoCtx?.transcription?.length ?? 0,
+    });
+  }
+
+  logDev('AI:RawCompletion', rawContent);
+
   const { bubbles, meta: parsedMeta } = parseAIReply(rawContent);
+
+  logDev('AI:ParsedResponse', { bubbles, parsedMeta });
+
+  // Validate response: if bubbles are empty or contain only schema fragments, something went wrong
+  const isSchemaEcho = bubbles.length === 1 && (bubbles[0].includes('"type"') && bubbles[0].includes('object'));
+  if (bubbles.length === 0 || isSchemaEcho) {
+    console.error('[chat-engine] DEGENERATE RESPONSE: AI returned unusable content. Raw:', rawContent.slice(0, 200));
+    throw new Error('AI returned degenerate response — all providers may be overloaded. Please retry.');
+  }
 
   // Ensure completedQuestIds is an array
   if (parsedMeta.completedQuestIds && !Array.isArray(parsedMeta.completedQuestIds)) {

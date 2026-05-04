@@ -10,7 +10,6 @@ interface StatsContextType {
   error: string | null;
   refetch: () => Promise<void>;
   updateDepth: (newDepth: number) => void;
-  updateHP: (newHP: number) => void;
   leveledUp: { newLevel: number; newDepth: number } | null;
   clearLevelUp: () => void;
 }
@@ -73,17 +72,11 @@ export const StatsProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
-  const updateHP = useCallback((newHP: number) => {
-    setStats(prev => {
-      if (!prev) return prev;
-      return { ...prev, currentHP: Math.max(0, newHP) };
-    });
-  }, []);
 
   const clearLevelUp = useCallback(() => setLeveledUp(null), []);
 
   return (
-    <StatsContext.Provider value={{ stats, loading, error, refetch: fetchStats, updateDepth, updateHP, leveledUp, clearLevelUp }}>
+    <StatsContext.Provider value={{ stats, loading, error, refetch: fetchStats, updateDepth, leveledUp, clearLevelUp }}>
       {children}
     </StatsContext.Provider>
   );

@@ -32,7 +32,6 @@ model User {
   magicWord            String               @default("explain")
   targetAccent         String               @default("us")
   xp                   Int                  @default(0)
-  currentHP            Int                  @default(100)
   diveDepth            Int                  @default(0)
   maxDiveDepth         Int                  @default(0)
   personalBestDepth    Int                  @default(0)
@@ -89,6 +88,7 @@ model SkillNode {
   category      String
   level         Int         @default(1)
   xpReward      Int         @default(100)
+  isCustom      Boolean     @default(false)
   prerequisites SkillNode[] @relation("NodePrerequisites")
   dependents    SkillNode[] @relation("NodePrerequisites")
   unlockedBy    User[]      @relation("UnlockedNodes")
@@ -219,8 +219,10 @@ model Message {
   chatSessionId      String?
   chatSession        ChatSession?  @relation(fields: [chatSessionId], references: [id])
   grammarCorrection  String?
+  vocabularyNote     String?
+  vibeNote           String?
   weaknessIdentified String?
-  bonusXP            Boolean       @default(false)
+  xpReward           Int           @default(0)
   edited             Boolean       @default(false)
   originalText       String?
   blockedBy          String?
@@ -335,6 +337,7 @@ model UserQuest {
   quest       Quest     @relation(fields: [questId], references: [id])
   completed   Boolean   @default(false)
   completedAt DateTime?
+  progress    Int       @default(0)
 
   @@index([userId])
 }

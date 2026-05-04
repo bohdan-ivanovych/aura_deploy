@@ -8,33 +8,7 @@
  *  - Server-side only (no "use client" import needed — this is pure TypeScript).
  */
 
-// ─── HP ──────────────────────────────────────────────────────────────────────
 
-/** HP a brand-new user starts with. */
-export const INITIAL_HP = 100;
-
-/** HP increase per level above level 1 (getMaxHP formula). */
-export const HP_PER_LEVEL = 5;
-
-/** Base HP regenerated on a clean message/call exchange (level 1). */
-export const BASE_REGEN = 5;
-
-/** Regen increases by 1 for every N levels gained. */
-export const REGEN_LEVEL_INTERVAL = 3;
-
-/** HP loss for a major grammar error in chat (depth >= penalty threshold). */
-export const HP_PENALTY_MAJOR = 10;
-
-/** HP loss for a minor grammar error (e.g. flashcard wrong). */
-export const HP_PENALTY_MINOR = 2;
-
-/**
- *  Below this dive depth AND below this session error count, major errors
- *  are forgiven (hpDelta = 0). Threshold lowered (from 30 to 15) so the
- *  stakes feel real after just ~7 sessions rather than 15.
- */
-export const HP_NOVICE_DEPTH_THRESHOLD = 15;
-export const HP_NOVICE_ERROR_FORGIVE_COUNT = 2;
 
 // ─── Depth (Progression) ─────────────────────────────────────────────────────
 

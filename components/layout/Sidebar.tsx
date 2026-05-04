@@ -225,12 +225,6 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Footer */}
-        <div className="px-3 pt-4 border-t border-[var(--border-subtle)]">
-          <p className="font-medium text-[var(--foreground-subtle)] tracking-wide" style={{ fontSize: '11px' }}>
-            Powered by Groq · Aura v0.1
-          </p>
-        </div>
       </div>
     </aside>
   );

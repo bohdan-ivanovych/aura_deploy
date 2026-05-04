@@ -96,21 +96,23 @@ export function ContextMenu({ isVisible, onClose, messageRect, message, metrics,
 
   const handleSpeak = useCallback(async () => {
     if (isSpeaking) return;
+    
+    if (!('speechSynthesis' in window)) {
+      return;
+    }
+
     setIsSpeaking(true);
-    try {
-      const res = await fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: message.text, voiceId: voiceId || undefined }) });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.onended = () => { URL.revokeObjectURL(url); setIsSpeaking(false); };
-        audio.onerror = () => { URL.revokeObjectURL(url); setIsSpeaking(false); };
-        await audio.play();
-      }
-    } catch { setIsSpeaking(false); }
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(message.text);
+    utterance.lang = 'en-US';
+    
+    utterance.onend = () => { setIsSpeaking(false); handleClose(); };
+    utterance.onerror = () => { setIsSpeaking(false); handleClose(); };
+    
+    window.speechSynthesis.speak(utterance);
     onSpeak(message.text);
-    handleClose();
-  }, [isSpeaking, message.text, voiceId, onSpeak, handleClose]);
+  }, [isSpeaking, message.text, onSpeak, handleClose]);
 
   const handleTranslate = useCallback(async () => {
     if (translation || isTranslating) return;

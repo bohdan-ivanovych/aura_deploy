@@ -703,14 +703,36 @@ export const SKILL_CATEGORIES = [
 ];
 
 export function mapWeaknessToNodeSlug(weakness: string): string | null {
-  const lc = weakness.toLowerCase();
-  
+  if (!weakness || typeof weakness !== 'string') return null;
+  const lc = weakness.toLowerCase().trim();
+  if (!lc || lc === 'none' || lc === 'null') return null;
+
+  // Pass 1 — exact keyword match (current logic)
   for (const node of GRAMMAR_NODES) {
     for (const keyword of node.keywords) {
-      if (lc.includes(keyword.toLowerCase()) || keyword.toLowerCase().includes(lc)) {
+      const klc = keyword.toLowerCase();
+      if (lc === klc || lc.includes(klc) || klc.includes(lc)) {
         return node.slug;
       }
     }
   }
+
+  // Pass 2 — title match (AI often returns the node title verbatim e.g. "Present Simple")
+  for (const node of GRAMMAR_NODES) {
+    const titleLc = node.title.toLowerCase();
+    if (lc === titleLc || lc.includes(titleLc) || titleLc.includes(lc)) {
+      return node.slug;
+    }
+  }
+
+  // Pass 3 — slug match (AI may already produce a slug-like string)
+  const lcSlug = lc.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  for (const node of GRAMMAR_NODES) {
+    if (lcSlug === node.slug || node.slug.includes(lcSlug) || lcSlug.includes(node.slug)) {
+      return node.slug;
+    }
+  }
+
+  // No static match found — caller should treat the raw weakness as a custom/dynamic slug
   return null;
 }

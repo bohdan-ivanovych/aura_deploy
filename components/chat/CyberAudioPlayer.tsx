@@ -27,70 +27,30 @@ export function CyberAudioPlayer({ message, voiceId }: { message: string; voiceI
 
   const handleClick = useCallback(async () => {
     if (state === 'playing') {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      abortRef.current?.abort();
+      window.speechSynthesis.cancel();
       setState('idle');
       return;
     }
-    if (state === 'loading' || state === 'unavailable') return;
+    if (state === 'unavailable') return;
 
-    setState('loading');
-    abortRef.current = new AbortController();
-
-    try {
-      const cacheKey = `${message}|||${voiceId ?? 'default'}`;
-      let url = audioUrlCache.get(cacheKey);
-
-      if (!url) {
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: message, voiceId: voiceId ?? null }),
-          signal: abortRef.current.signal,
-        });
-
-        // Azure not configured or rate-limited → silently mark unavailable
-        if (res.status === 503 || res.status === 429) {
-          setState('unavailable');
-          return;
-        }
-
-        if (!res.ok) {
-          console.warn('[TTS] synthesis failed, status', res.status);
-          setState('idle');
-          return;
-        }
-
-        const blob = await res.blob();
-        url = URL.createObjectURL(blob);
-        audioUrlCache.set(cacheKey, url); // store before any play so replay works
-      }
-
-      const audio = new Audio(url);
-      audioRef.current = audio;
-
-      audio.onended = () => {
-        setState('idle');
-        audioRef.current = null;
-        // Do NOT revoke — URL is in cache for replay
-      };
-
-      audio.onerror = () => {
-        setState('idle');
-        audioRef.current = null;
-        // Evict broken entry so next click retries fresh
-        audioUrlCache.delete(`${message}|||${voiceId ?? 'default'}`);
-      };
-
-      setState('playing');
-      await audio.play();
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') return; // user-cancelled, silent
-      console.warn('[TTS] playback error', err);
-      setState('idle');
+    if (!('speechSynthesis' in window)) {
+      setState('unavailable');
+      return;
     }
-  }, [state, message, voiceId]);
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.lang = 'en-US'; // English by default
+
+    utterance.onstart = () => setState('playing');
+    utterance.onend = () => setState('idle');
+    utterance.onerror = (e) => {
+      console.warn('[TTS] playback error', e);
+      setState('idle');
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, [state, message]);
 
   // Service unavailable — render a muted, non-interactive icon
   if (state === 'unavailable') {

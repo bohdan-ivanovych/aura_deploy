@@ -18,7 +18,7 @@ export async function GET(
         senderType: true,
         grammarCorrection: true,
         weaknessIdentified: true,
-        bonusXP: true,
+        xpReward: true,
         createdAt: true,
       },
     });

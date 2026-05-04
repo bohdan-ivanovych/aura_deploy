@@ -11,7 +11,7 @@ import { haptics } from '@/lib/utils/haptics';
 import { useChatUIStore } from '@/lib/stores/ui-store';
 
 interface ChatInputProps {
-  onSend: (text: string, replyToId?: string, isTikTok?: boolean) => void;
+  onSend: (text: string, replyToId?: string, shortVideoPlatform?: 'tiktok' | 'shorts' | 'reels' | false) => void;
   disabled?: boolean;
   placeholder?: string;
   selectedSession?: { blockedBy?: string | null; persona?: { name: string } | null };
@@ -22,10 +22,10 @@ interface ChatInputProps {
 
 const BASE_PROMPTS = [
   (n: string) => `Message ${n}...`,
-  (_n: string) => 'Try not to use basic words...',
-  (_n: string) => 'Speak C1 or remain silent...',
+  (_n: string) => 'Use more advanced vocabulary...',
+  (_n: string) => 'Try a complex sentence structure...',
   (n: string) => `Say something to ${n}...`,
-  (_n: string) => 'Show me what you\'ve got...',
+  (_n: string) => 'Express yourself clearly...',
 ];
 
 function getPersonaPrompts(personaName: string): string[] {
@@ -37,10 +37,39 @@ function detectTikTok(text: string): boolean {
   return /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i.test(text);
 }
 
+/** Returns true when the text contains a YouTube Shorts URL */
+function detectShorts(text: string): boolean {
+  return /https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)/i.test(text);
+}
+
+/** Returns true when the text contains an Instagram Reels URL */
+function detectReels(text: string): boolean {
+  return /https?:\/\/(?:www\.)?instagram\.com\/(?:reels?|p)\/[\w-]+\/?/i.test(text);
+}
+
+/** Returns the detected platform or false */
+function detectShortVideo(text: string): 'tiktok' | 'shorts' | 'reels' | false {
+  if (detectTikTok(text)) return 'tiktok';
+  if (detectShorts(text)) return 'shorts';
+  if (detectReels(text)) return 'reels';
+  return false;
+}
+
 /** Extracts the first TikTok URL from the text, or null */
 function extractTikTokUrl(text: string): string | null {
   const match = text.match(/https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i);
   return match ? match[0].split('?')[0] : null;
+}
+
+/** Extracts the first short-video URL from the text, or null */
+function extractShortVideoUrl(text: string): string | null {
+  const ttMatch = text.match(/https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i);
+  if (ttMatch) return ttMatch[0].split('?')[0];
+  const ytMatch = text.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)\S*/i);
+  if (ytMatch) return ytMatch[0].split('?')[0];
+  const igMatch = text.match(/https?:\/\/(?:www\.)?instagram\.com\/(?:reels?|p)\/[\w-]+\/?/i);
+  if (igMatch) return igMatch[0].split('?')[0];
+  return null;
 }
 
 function TypewriterPlaceholder({ text }: { text: string }) {
@@ -146,8 +175,8 @@ export function ChatInput({
     setTimeout(() => { sendingRef.current = false; }, 800);
     haptics.medium();
     if (isListening) stopVoice();
-    const isTikTok = detectTikTok(trimmed);
-    onSend(trimmed, replyTo?.id, isTikTok);
+    const shortVideoPlatform = detectShortVideo(trimmed);
+    onSend(trimmed, replyTo?.id, shortVideoPlatform);
     setText('');
     haptics.light();
     if (textareaRef.current) {
@@ -195,11 +224,17 @@ export function ChatInput({
     if (isBlocked) return 'This chat is blocked…';
     if (disabled) return `${personaName} is thinking…`;
     if (isListening) return '';
-    if (replyTo) return `Reply to ${replyTo.sender === 'AI' ? 'AI' : 'yourself'}…`;
+    if (replyTo) return `Reply to ${replyTo.sender === 'AI' ? personaName : 'yourself'}…`;
     return '';
   };
 
-  const isTikTokUrl = detectTikTok(text);
+  const shortVideoPlatform = detectShortVideo(text);
+
+  const SHORT_VIDEO_STYLES = {
+    tiktok:  { bg: 'rgba(244,63,94,0.06)',  border: 'rgba(244,63,94,0.2)',  color: '#f43f5e',  icon: '🎵', label: 'TikTok Detected' },
+    shorts:  { bg: 'rgba(255,0,0,0.06)',     border: 'rgba(255,0,0,0.22)',   color: '#ff0000',  icon: '▶️', label: 'YouTube Shorts' },
+    reels:   { bg: 'rgba(168,85,247,0.06)', border: 'rgba(168,85,247,0.2)', color: '#a855f7',  icon: '🎬', label: 'Instagram Reels' },
+  } as const;
 
   return (
     <div
@@ -215,34 +250,37 @@ export function ChatInput({
     >
       <div className="max-w-5xl w-full mx-auto px-4 md:px-8 pointer-events-auto">
 
-        {/* TikTok URL preview pill */}
+        {/* Short-video URL preview pill (TikTok / Shorts / Reels) */}
         <AnimatePresence>
-          {isTikTokUrl && (
-            <motion.div
-              initial={{ opacity: 0, y: 8, height: 0 }}
-              animate={{ opacity: 1, y: 0, height: 'auto' }}
-              exit={{ opacity: 0, y: 4, height: 0 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-              className="mb-2 overflow-hidden"
-            >
-              <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl"
-                style={{
-                  background: 'rgba(244,63,94,0.06)',
-                  border: '1px solid rgba(244,63,94,0.2)',
-                  backdropFilter: 'blur(12px)',
-                }}>
-                <span className="text-base shrink-0">🎵</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em]" style={{ color: '#f43f5e' }}>TikTok Detected</p>
-                  <p className="text-[12px] text-[var(--foreground-muted)] truncate">{extractTikTokUrl(text) || text.trim()}</p>
+          {shortVideoPlatform && (() => {
+            const style = SHORT_VIDEO_STYLES[shortVideoPlatform];
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 8, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: 4, height: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                className="mb-2 overflow-hidden"
+              >
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl"
+                  style={{
+                    background: style.bg,
+                    border: `1px solid ${style.border}`,
+                    backdropFilter: 'blur(12px)',
+                  }}>
+                  <span className="text-base shrink-0">{style.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em]" style={{ color: style.color }}>{style.label}</p>
+                    <p className="text-[12px] text-[var(--foreground-muted)] truncate">{extractShortVideoUrl(text) || text.trim()}</p>
+                  </div>
+                  <span className="text-[8px] font-black uppercase tracking-[0.2em] shrink-0 px-1.5 py-0.5 rounded-full"
+                    style={{ background: `${style.border}`, color: style.color, border: `1px solid ${style.border}` }}>
+                    Note incoming
+                  </span>
                 </div>
-                <span className="text-[8px] font-black uppercase tracking-[0.2em] shrink-0 px-1.5 py-0.5 rounded-full"
-                  style={{ background: 'rgba(244,63,94,0.12)', color: '#f43f5e', border: '1px solid rgba(244,63,94,0.25)' }}>
-                  Note incoming
-                </span>
-              </div>
-            </motion.div>
-          )}
+              </motion.div>
+            );
+          })()}
         </AnimatePresence>
 
         {/* Reply preview bar */}

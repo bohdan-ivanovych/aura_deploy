@@ -12,12 +12,12 @@ import MagicTextWrapper from '@/components/chat/MagicTextWrapper';
 
 import { 
   ErrorHighlightedText, 
-  FloatingXPBadge, 
+  FloatingMetersBadge, 
   TypingDots, 
   ReadReceipt, 
   BubbleTail 
 } from './message/MessageDecorations';
-import { GrammarCorrectionCard, SuggestionCard } from './message/MessageFeedback';
+import { GrammarNoteCard, VocabularyNoteCard, VibeNoteCard } from './message/MessageFeedback';
 import { TikTokNoteCard, type TikTokNoteData } from './message/TikTokNoteCard';
 import { ReactionPill, ReactionPicker } from './message/MessageReactions';
 import { MessageMetadata } from './message/MessageMetadata';
@@ -33,8 +33,9 @@ interface ChatMessageProps {
   senderType: 'USER_A' | 'USER_B' | 'AI_PERSONA';
   grammarCorrection?: string | null;
   weaknessIdentified?: string | null;
-  bonusXP?: boolean;
-  suggestion?: string | null;
+  xpReward?: number;
+  vocabularyNote?: string | null;
+  vibeNote?: string | null;
   errorSpan?: { original: string; corrected: string } | null;
   conversationContext?: Array<{ text: string; sender: 'user' | 'ai' }>;
   persona?: string;
@@ -68,6 +69,7 @@ interface ChatMessageProps {
   showMagicHint?: boolean;
   tiktokNote?: TikTokNoteData | null;
   isHistorical?: boolean;
+  suggestion?: string | null;
 }
 
 export const ChatMessage = memo(function ChatMessage({
@@ -75,8 +77,9 @@ export const ChatMessage = memo(function ChatMessage({
   senderType,
   grammarCorrection,
   weaknessIdentified,
-  bonusXP,
-  suggestion,
+  xpReward,
+  vocabularyNote,
+  vibeNote,
   errorSpan,
   persona = 'AI Assistant',
   senderName,
@@ -109,6 +112,7 @@ export const ChatMessage = memo(function ChatMessage({
   showMagicHint = false,
   isHistorical = false,
   tiktokNote,
+  suggestion,
 }: ChatMessageProps) {
   const isAI = senderType === 'AI_PERSONA';
   const [editText, setEditText] = useState(message);
@@ -137,8 +141,8 @@ export const ChatMessage = memo(function ChatMessage({
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [grammarSheetOpen, setGrammarSheetOpen] = useState(false);
 
-  const [showXP, setShowXP] = useState(false);
-  const hasShownXP = useRef(false);
+  const [showMetersBadge, setShowMetersBadge] = useState(false);
+  const hasShownMeters = useRef(false);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchMovedRef = useRef(false);
@@ -176,11 +180,11 @@ export const ChatMessage = memo(function ChatMessage({
   };
 
   useEffect(() => {
-    if (!hasShownXP.current && (bonusXP || grammarCorrection)) {
-      const t = setTimeout(() => { setShowXP(true); hasShownXP.current = true; }, 400);
+    if (!hasShownMeters.current && (xpReward !== undefined || grammarCorrection)) {
+      const t = setTimeout(() => { setShowMetersBadge(true); hasShownMeters.current = true; }, 400);
       return () => clearTimeout(t);
     }
-  }, [bonusXP, grammarCorrection]);
+  }, [xpReward, grammarCorrection]);
 
   const handleSaveEdit = () => {
     if (onEdit && messageId) onEdit(messageId, editText);
@@ -190,26 +194,8 @@ export const ChatMessage = memo(function ChatMessage({
     ? new Date(createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
     : null;
 
-  const xpValue = bonusXP ? 5 : grammarCorrection ? -3 : 0;
-  const xpColor: 'green' | 'red' = bonusXP ? 'green' : 'red';
-
-  const getBorderRadius = () => {
-    if (isAI) {
-      return {
-        borderTopLeftRadius: isFirstInGroup ? '18px' : '6px',
-        borderTopRightRadius: '18px',
-        borderBottomRightRadius: '18px',
-        borderBottomLeftRadius: isLastInGroup ? '4px' : '6px',
-      };
-    } else {
-      return {
-        borderTopLeftRadius: '18px',
-        borderTopRightRadius: isFirstInGroup ? '18px' : '6px',
-        borderBottomRightRadius: isLastInGroup ? '4px' : '6px',
-        borderBottomLeftRadius: '18px',
-      };
-    }
-  };
+  const showMeters = !isHistorical && xpReward !== undefined && typeof window !== 'undefined' && showMetersBadge;
+  const metersValue = xpReward ?? 0;
 
   const avatarEl = isAI && showAvatar ? (
     isFirstInGroup ? (
@@ -266,85 +252,108 @@ export const ChatMessage = memo(function ChatMessage({
             <span className="text-[10px] font-semibold px-1 mb-0.5" style={{ color: 'var(--accent-primary)' }}>{senderName || persona}</span>
           )}
 
-          <div className="relative">
-            <div
-              ref={bubbleRef}
-              className={`relative px-4 py-3 transition-all ${reelMode && isAI ? 'select-text' : 'select-none'}`}
-              style={isAI ? {
-                background: 'var(--bubble-ai-bg)', border: '1px solid var(--bubble-ai-border)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), var(--bubble-ai-shadow)', isolation: 'isolate', WebkitTouchCallout: reelMode ? 'default' : 'none', userSelect: reelMode ? 'text' : 'none', WebkitUserSelect: reelMode ? 'text' : 'none', ...getBorderRadius(),
+          <div 
+            ref={bubbleRef} 
+            className="relative flex flex-col gap-[6px] max-w-full"
+            onContextMenu={handleContextMenu}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            {message.split('\n\n').map((bubbleText, idx, arr) => {
+              const isLastBubble = idx === arr.length - 1;
+              const isFirstBubble = idx === 0;
+              const currentBorderRadius = isAI ? {
+                borderTopLeftRadius: (isFirstInGroup && isFirstBubble) ? '18px' : '6px',
+                borderTopRightRadius: '18px',
+                borderBottomRightRadius: '18px',
+                borderBottomLeftRadius: (isLastInGroup && isLastBubble) ? '4px' : '6px',
               } : {
-                background: 'var(--bubble-user-bg)', border: '1px solid var(--bubble-user-border)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), var(--bubble-user-shadow)', isolation: 'isolate', WebkitTouchCallout: 'none', userSelect: 'none', WebkitUserSelect: 'none', ...getBorderRadius(),
-              }}
-              onContextMenu={handleContextMenu}
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-            >
-              {isLastInGroup && <BubbleTail isAI={isAI} />}
-              
-              {showXP && xpValue !== 0 && !isAI && <FloatingXPBadge value={xpValue} color={xpColor} />}
+                borderTopLeftRadius: '18px',
+                borderTopRightRadius: (isFirstInGroup && isFirstBubble) ? '18px' : '6px',
+                borderBottomRightRadius: (isLastInGroup && isLastBubble) ? '4px' : '6px',
+                borderBottomLeftRadius: '18px',
+              };
 
+              return (
+                <div
+                  key={idx}
+                  className={`relative px-4 py-3 transition-all ${reelMode && isAI ? 'select-text' : 'select-none'}`}
+                  style={isAI ? {
+                    background: 'var(--bubble-ai-bg)', border: '1px solid var(--bubble-ai-border)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), var(--bubble-ai-shadow)', isolation: 'isolate', WebkitTouchCallout: reelMode ? 'default' : 'none', userSelect: reelMode ? 'text' : 'none', WebkitUserSelect: reelMode ? 'text' : 'none', ...currentBorderRadius,
+                  } : {
+                    background: 'var(--bubble-user-bg)', border: '1px solid var(--bubble-user-border)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15), var(--bubble-user-shadow)', isolation: 'isolate', WebkitTouchCallout: 'none', userSelect: 'none', WebkitUserSelect: 'none', ...currentBorderRadius,
+                  }}
+                >
+                  {isLastInGroup && isLastBubble && <BubbleTail isAI={isAI} />}
+                  
+                  {isLastBubble && showMeters && xpReward !== undefined && !isAI && <FloatingMetersBadge value={metersValue} />}
 
+                  {isFirstBubble && replyTo && (
+                    <div className={`mb-2 pb-2 flex items-start gap-2 rounded-lg px-2 py-1.5 border-l-2`}
+                      style={{ borderLeftColor: isAI ? 'rgba(0,212,212,0.5)' : 'var(--border)', background: isAI ? 'rgba(0,212,212,0.06)' : 'var(--surface-hover)' }}>
+                      <CornerUpLeft className="w-3 h-3 mt-0.5 shrink-0" style={{ color: isAI ? 'rgba(0,212,212,0.7)' : 'var(--foreground-muted)' }} />
+                      <div className="min-w-0">
+                        <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: isAI ? 'rgba(0,212,212,0.8)' : 'var(--foreground-muted)' }}>{replyTo.sender === 'USER' ? 'You' : persona}</span>
+                        <p className="text-[11px] truncate leading-snug" style={{ color: 'var(--foreground-muted)' }}>{replyTo.text.slice(0, 80)}{replyTo.text.length > 80 ? '…' : ''}</p>
+                      </div>
+                    </div>
+                  )}
 
+                  {isEditing && isFirstBubble ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea value={editText} onChange={(e) => setEditText(e.target.value)}
+                        className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-xl p-2.5 text-[var(--foreground)] resize-none text-sm outline-none focus:border-[var(--accent-cyan)]"
+                        rows={3} autoFocus />
+                      <div className="flex gap-1 justify-end">
+                        <button onClick={() => setEditText(message)} className="tap-target rounded-xl hover:bg-red-500/15 transition-colors text-red-400"><X className="w-4 h-4" /></button>
+                        <button onClick={handleSaveEdit} className="tap-target rounded-xl hover:bg-green-500/15 transition-colors text-green-400"><Check className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  ) : !isEditing && isAI ? (
+                    reelMode ? (
+                      <MagicTextWrapper fullMessageText={bubbleText}>
+                        <p className="text-[14px] leading-[1.8] font-medium text-[var(--foreground)] tracking-[0.005em] select-text">{bubbleText}</p>
+                      </MagicTextWrapper>
+                    ) : (
+                      <ClickableWordText text={bubbleText} voiceId={voiceId} fullMessageText={bubbleText} magicHintWordIndices={magicHintWordIndices} />
+                    )
+                  ) : !isEditing && errorSpan ? (
+                    <ErrorHighlightedText text={bubbleText} errorSpan={errorSpan} onReadTimeout={onWordPopupRead} />
+                  ) : !isEditing && (
+                    <p className="text-[14px] leading-[1.65] font-medium text-[var(--foreground)] tracking-[0.005em] after:content-[''] after:inline-block after:w-[46px] after:h-2">{bubbleText}</p>
+                  )}
 
-              {replyTo && (
-                <div className={`mb-2 pb-2 flex items-start gap-2 rounded-lg px-2 py-1.5 border-l-2`}
-                  style={{ borderLeftColor: isAI ? 'rgba(0,212,212,0.5)' : 'var(--border)', background: isAI ? 'rgba(0,212,212,0.06)' : 'var(--surface-hover)' }}>
-                  <CornerUpLeft className="w-3 h-3 mt-0.5 shrink-0" style={{ color: isAI ? 'rgba(0,212,212,0.7)' : 'var(--foreground-muted)' }} />
-                  <div className="min-w-0">
-                    <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: isAI ? 'rgba(0,212,212,0.8)' : 'var(--foreground-muted)' }}>{replyTo.sender === 'USER' ? 'You' : persona}</span>
-                    <p className="text-[11px] truncate leading-snug" style={{ color: 'var(--foreground-muted)' }}>{replyTo.text.slice(0, 80)}{replyTo.text.length > 80 ? '…' : ''}</p>
-                  </div>
+                  {/* ОНОВЛЕНО: Блок корекції тепер має матовий фон та border, щоб не бути прозорим */}
+                  {isLastBubble && (grammarCorrection || (!tiktokNote && vocabularyNote) || (!tiktokNote && vibeNote) || tiktokNote) && (
+                    <div className="mt-3 flex flex-col gap-2 relative z-[10]">
+                      <div className="rounded-xl overflow-hidden backdrop-blur-xl shadow-sm" style={{ background: 'var(--surface)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                        <div className="p-0.5">
+                          {grammarCorrection && <GrammarNoteCard messageId={messageId} text={grammarCorrection} weaknessIdentified={weaknessIdentified} />}
+                          {!tiktokNote && vocabularyNote && <VocabularyNoteCard messageId={messageId} text={vocabularyNote} weaknessIdentified={weaknessIdentified} />}
+                          {!tiktokNote && vibeNote && <VibeNoteCard text={vibeNote} />}
+                          {tiktokNote && <TikTokNoteCard data={tiktokNote} />}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {isLastBubble && (grammarCorrection || vocabularyNote || vibeNote || tiktokNote) ? (
+                    <div className="flex items-center gap-0.5 justify-end mt-1 pointer-events-none select-none" style={{ opacity: 0.45 }}>
+                      {edited && <span className="text-[9px] font-medium italic" style={{ color: 'var(--foreground)' }}>edited</span>}
+                      {timeString && <span className="text-[9px] font-medium tracking-wide" style={{ color: 'var(--foreground)' }}>{timeString}</span>}
+                      {!isAI && readState && <ReadReceipt state={readState} />}
+                    </div>
+                  ) : isLastBubble && (
+                    <div className="absolute bottom-2 right-2.5 flex items-center gap-0.5 pointer-events-none select-none" style={{ opacity: 0.55 }}>
+                      {edited && <span className="text-[9px] font-medium italic" style={{ color: 'var(--foreground)' }}>edited</span>}
+                      {timeString && <span className="text-[9px] font-medium tracking-wide" style={{ color: 'var(--foreground)' }}>{timeString}</span>}
+                      {!isAI && readState && <ReadReceipt state={readState} />}
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {isEditing ? (
-                <div className="flex flex-col gap-2">
-                  <textarea value={editText} onChange={(e) => setEditText(e.target.value)}
-                    className="w-full bg-[var(--surface-hover)] border border-[var(--border)] rounded-xl p-2.5 text-[var(--foreground)] resize-none text-sm outline-none focus:border-[var(--accent-cyan)]"
-                    rows={3} autoFocus />
-                  <div className="flex gap-1 justify-end">
-                    <button onClick={() => setEditText(message)} className="tap-target rounded-xl hover:bg-red-500/15 transition-colors text-red-400"><X className="w-4 h-4" /></button>
-                    <button onClick={handleSaveEdit} className="tap-target rounded-xl hover:bg-green-500/15 transition-colors text-green-400"><Check className="w-4 h-4" /></button>
-                  </div>
-                </div>
-              ) : isAI ? (
-                reelMode ? (
-                  // In reel mode: use native text selection so users highlight phrases
-                  <MagicTextWrapper fullMessageText={message}>
-                    <p className="text-[14px] leading-[1.8] font-medium text-[var(--foreground)] tracking-[0.005em] select-text">{message}</p>
-                  </MagicTextWrapper>
-                ) : (
-                  <ClickableWordText text={message} voiceId={voiceId} fullMessageText={message} magicHintWordIndices={magicHintWordIndices} />
-                )
-              ) : errorSpan ? (
-                <ErrorHighlightedText text={message} errorSpan={errorSpan} onReadTimeout={onWordPopupRead} />
-              ) : (
-                <p className="text-[14px] leading-[1.65] font-medium text-[var(--foreground)] tracking-[0.005em] after:content-[''] after:inline-block after:w-[46px] after:h-2">{message}</p>
-              )}
-
-              {grammarCorrection && (
-                <GrammarCorrectionCard messageId={messageId} grammarCorrection={grammarCorrection} weaknessIdentified={weaknessIdentified} />
-              )}
-              {tiktokNote && <TikTokNoteCard data={tiktokNote} />}
-              {suggestion && <SuggestionCard suggestion={suggestion} />}
-
-              {/* Inline time + read receipts */}
-              {/* When grammar/suggestion cards are present, flow below them. Otherwise absolute bottom-right */}
-              {(grammarCorrection || suggestion) ? (
-                <div className="flex items-center gap-0.5 justify-end mt-1 pointer-events-none select-none" style={{ opacity: 0.45 }}>
-                  {edited && <span className="text-[9px] font-medium italic" style={{ color: 'var(--foreground)' }}>edited</span>}
-                  {timeString && <span className="text-[9px] font-medium tracking-wide" style={{ color: 'var(--foreground)' }}>{timeString}</span>}
-                  {!isAI && readState && <ReadReceipt state={readState} />}
-                </div>
-              ) : (
-                <div className="absolute bottom-2 right-2.5 flex items-center gap-0.5 pointer-events-none select-none" style={{ opacity: 0.55 }}>
-                  {edited && <span className="text-[9px] font-medium italic" style={{ color: 'var(--foreground)' }}>edited</span>}
-                  {timeString && <span className="text-[9px] font-medium tracking-wide" style={{ color: 'var(--foreground)' }}>{timeString}</span>}
-                  {!isAI && readState && <ReadReceipt state={readState} />}
-                </div>
-              )}
-            </div>
+              );
+            })}
 
             <ReactionPill reaction={reaction || null} isAI={isAI} />
           </div>

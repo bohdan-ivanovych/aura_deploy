@@ -8,6 +8,7 @@ import { useStats } from '@/lib/contexts/stats-context';
 import { resetInactivityTimers } from '@/lib/notifications';
 import type { ReplyTarget } from '@/components/chat/ChatMessage';
 import { haptics } from '@/lib/utils/haptics';
+import { mapWeaknessToNodeSlug } from '@/lib/game/grammar-nodes';
 
 /** Parse raw SSE text into { event, data } pairs */
 function parseSSEChunk(raw: string): Array<{ event: string; data: string }> {
@@ -30,16 +31,18 @@ export function useChatHandlers() {
   const raw = useChatSessions();
   const sessions: typeof raw.sessions = Array.isArray(raw.sessions) ? raw.sessions : [];
   const { updateSession, deleteSession, addSession, selectedSessionId, setSelectedSessionId, setSessions } = raw;
-  const { updateDepth, updateHP } = useStats();
+  const { updateDepth } = useStats();
 
   const [loading, setLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [lastDepthChange, setLastDepthChange] = useState<{ delta: number } | null>(null);
-  const [lastHPDelta, setLastHPDelta] = useState<number | null>(null);
+  const [lastDepthChange, setLastDepthChange] = useState<{ delta: number; skillSlug?: string | null } | null>(null);
+
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   const [practicePrompt, setPracticePrompt] = useState<string | undefined>(undefined);
   const [limitReached, setLimitReached] = useState(false);
   const [typingSessionId, setTypingSessionId] = useState<string | null>(null);
+  // Track the latest weakness slug so depth indicator can link to skill tree
+  const lastWeaknessSlugRef = useRef<string | null>(null);
 
   const sendLockRef = useRef(false);
   const isMountedRef = useRef(true);
@@ -254,6 +257,8 @@ export function useChatHandlers() {
     sessionId: string,
     replyingTo: ReplyTarget | null = null,
     isTikTok: boolean = false,
+    isShortVideo: boolean = false,
+    shortVideoPlatform?: 'tiktok' | 'shorts' | 'reels',
   ) => {
     if (!text.trim() || loading || !sessionId) return;
     if (sendLockRef.current) return;
@@ -284,7 +289,7 @@ export function useChatHandlers() {
         senderType: 'USER_A',
         grammarCorrection: null,
         weaknessIdentified: null,
-        bonusXP: false,
+        xpReward: undefined,
         createdAt: new Date(),
         replyToId: replyingTo?.id ?? null,
         readState: 'sent',
@@ -319,6 +324,7 @@ export function useChatHandlers() {
           personaId: currentSession?.persona?.id,
           lastReaction,
           isTikTok,
+          isShortVideo: isShortVideo || isTikTok,
         }),
       });
 
@@ -379,12 +385,16 @@ export function useChatHandlers() {
                 }
               }
 
-              if (event === 'user_update' && payload.errorSpan) {
+              if (event === 'user_update') {
                 const targetId = payload.userMsgId || realUserMsgId || tempId;
                 const msgs: any[] = getSession()?.messages || [];
                 updateSession(sessionId, {
                   messages: msgs.map((m: any) =>
-                    m.id === targetId ? { ...m, errorSpan: payload.errorSpan } : m
+                    m.id === targetId ? { 
+                      ...m, 
+                      ...(payload.errorSpan !== undefined && { errorSpan: payload.errorSpan }),
+                      ...(payload.xpReward !== undefined && { xpReward: payload.xpReward })
+                    } : m
                   ),
                 });
               }
@@ -400,6 +410,15 @@ export function useChatHandlers() {
                 }
                 setTypingSessionId(null);
 
+                // Capture weakness slug for skill-tree navigation
+                if (payload.weaknessIdentified) {
+                  const slug = mapWeaknessToNodeSlug(payload.weaknessIdentified);
+                  // Fall back to sanitised raw value for custom/dynamic topics
+                  lastWeaknessSlugRef.current = slug ?? String(payload.weaknessIdentified).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                } else {
+                  lastWeaknessSlugRef.current = null;
+                }
+
                 const newMsg = {
                   id: payload.id,
                   text: payload.text,
@@ -409,7 +428,9 @@ export function useChatHandlers() {
                   senderAvatar: payload.senderAvatar ?? null,
                   grammarCorrection: payload.grammarCorrection ?? null,
                   weaknessIdentified: payload.weaknessIdentified ?? null,
-                  bonusXP: payload.bonusXP ?? false,
+                  vocabularyNote: payload.vocabularyNote ?? null,
+                  vibeNote: payload.vibeNote ?? null,
+                  xpReward: payload.xpReward ?? 1,
                   suggestion: payload.suggestion ?? null,
                   errorSpan: payload.errorSpan ?? null,
                   replyTo: payload.replyTo ?? null,
@@ -428,12 +449,7 @@ export function useChatHandlers() {
                     setTimeout(() => setLastDepthChange(null), 2200);
                   }
                 }
-                if (typeof payload.currentHP === 'number') {
-                  updateHP(payload.currentHP);
-                  if (typeof payload.hpDelta === 'number' && payload.hpDelta < 0) haptics.error();
-                  setLastHPDelta(payload.hpDelta ?? null);
-                  setTimeout(() => setLastHPDelta(null), 2000);
-                }
+
                 // 🎯 CEFR Level Badge — surface estimated level to user
                 if (payload.userLevel && typeof payload.userLevel === 'string') {
                   const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
@@ -502,36 +518,43 @@ export function useChatHandlers() {
                 if (typeof payload.currentDepth === 'number') {
                   updateDepth(payload.currentDepth);
                 }
-                if (typeof payload.currentHP === 'number') {
-                  updateHP(payload.currentHP);
-                }
+
                 if (typeof payload.depthDelta === 'number' && payload.depthDelta !== 0) {
-                  setLastDepthChange({ delta: payload.depthDelta });
-                  setTimeout(() => setLastDepthChange(null), 2200);
+                  // Attach the weakness slug so the depth indicator can navigate to the skill tree
+                  setLastDepthChange({ delta: payload.depthDelta, skillSlug: lastWeaknessSlugRef.current });
+                  setTimeout(() => setLastDepthChange(null), 4000);
                 }
-                if (typeof payload.hpDelta === 'number' && payload.hpDelta < 0) {
-                  haptics.error();
-                  setLastHPDelta(payload.hpDelta);
-                  setTimeout(() => setLastHPDelta(null), 2000);
-                }
+
                 window.dispatchEvent(new CustomEvent('quest-progress-update'));
                 resetInactivityTimers();
                 
-                // If this was a TikTok message, fetch the TikTok Note in the background
-                // and inject it into the last AI message client-side (non-blocking)
-                if (isTikTok) {
-                  // Extract just the TikTok URL from the message text
-                  const tiktokUrlMatch = userText.match(/https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i);
-                  const tiktokUrl = tiktokUrlMatch ? tiktokUrlMatch[0].split('?')[0] : userText;
-                  fetch('/api/tiktok-note', {
+                // If this was a short-video message (TikTok / Shorts / Reels),
+                // fetch the Note card in the background and inject it into the last AI message.
+                const _isShortVideo = isShortVideo || isTikTok;
+                if (_isShortVideo) {
+                  const platform = shortVideoPlatform || (isTikTok ? 'tiktok' : 'tiktok');
+                  const noteApiMap: Record<string, string> = {
+                    tiktok: '/api/tiktok-note',
+                    shorts: '/api/shorts-note',
+                    reels:  '/api/reels-note',
+                  };
+                  const noteApi = noteApiMap[platform] || '/api/tiktok-note';
+
+                  // Extract the video URL from the user message text
+                  const videoUrlMatch = userText.match(
+                    /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com|youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+|instagram\.com\/(?:reels?|p)\/[\w-]+)\S*/i,
+                  );
+                  const videoUrl = videoUrlMatch ? videoUrlMatch[0].split('?')[0] : userText;
+
+                  fetch(noteApi, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: tiktokUrl }),
+                    body: JSON.stringify({ url: videoUrl }),
                   })
                     .then(r => r.ok ? r.json() : null)
                     .then(noteData => {
                       if (!noteData || !noteData.phrase) return;
-                      // Inject tiktokNote into the last AI message in the session
+                      // Inject note into the last AI message in the session
                       const msgs: any[] = getSession()?.messages || [];
                       const lastAIIdx = msgs.map((m: any) => m.sender).lastIndexOf('AI');
                       if (lastAIIdx === -1) return;
@@ -540,7 +563,7 @@ export function useChatHandlers() {
                       );
                       updateSession(sessionId, { messages: updated });
                     })
-                    .catch(() => { /* silent — TikTok Note is optional */ });
+                    .catch(() => { /* silent — Notes are optional */ });
                 }
 
                 const allSessions = useAppStore.getState().chatSessions;
@@ -593,13 +616,13 @@ export function useChatHandlers() {
       setTypingSessionId(null);
       if (isMountedRef.current) setLoading(false);
     }
-  }, [loading, sessions, updateSession, updateDepth, updateHP]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, sessions, updateSession, updateDepth]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     loading,
     isCreating,
     lastDepthChange,
-    lastHPDelta,
+    lastWeaknessSlug: lastWeaknessSlugRef.current,
     replyTo,
     setReplyTo,
     practicePrompt,

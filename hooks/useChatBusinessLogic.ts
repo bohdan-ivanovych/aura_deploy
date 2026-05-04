@@ -69,12 +69,16 @@ export function useChatBusinessLogic({
   useEffect(() => {
     if (!selectedSessionId || !selectedSession) return;
     
-    // Load if session has <= 1 messages and we haven't fetched it
-    if ((selectedSession.messages?.length || 0) <= 1 && !fetchedSessionsRef.current.has(selectedSessionId)) {
+    // Always asynchronously load full message history (up to 50) when opening a chat for the first time, 
+    // but don't block the UI if we already have the initial 15 messages.
+    if (!fetchedSessionsRef.current.has(selectedSessionId)) {
       fetchedSessionsRef.current.add(selectedSessionId);
       
       const loadMessages = async () => {
-        setIsLoadingMessages(true);
+        // Only show blocking loading state if we have 0 messages
+        if ((selectedSession.messages?.length || 0) === 0) {
+          setIsLoadingMessages(true);
+        }
         try {
           const res = await fetch(`/api/chat-sessions/${selectedSessionId}/messages`);
           if (!res.ok) throw new Error('Failed to fetch messages');
@@ -97,33 +101,52 @@ export function useChatBusinessLogic({
     }
   }, [selectedSessionId, selectedSession, setSessions]);
 
-  // Sync initial sessions
+  // Sync initial sessions from server props (if any) and background fetch latest
   useEffect(() => {
-    if (hydrated && initialSessions.length > 0 && sessions.length === 0) {
-      setSessions(initialSessions as any);
+    if (!hydrated) return;
+    
+    // Set loading false immediately if we have any cached or initial sessions
+    if (initialSessions.length > 0 || sessions.length > 0) {
+      setChatSessionsLoading(false);
     }
-  }, [hydrated, initialSessions, sessions.length, setSessions]);
 
-  // Load backend sessions if none exist
-  useEffect(() => {
-    if (!hydrated || initialSessions.length > 0 || sessions.length > 0) {
-      setChatSessionsLoading(false);
-      return;
-    }
-    const load = async () => {
+    const syncSessions = async () => {
       try {
-        const res = await fetch('/api/chat-sessions');
-        const data = await res.json();
-        const loaded: any[] = data.sessions || [];
-        setSessions(loaded);
-        if (loaded.length === 0 && !pickerParam) setStudioOpen(true);
-      } catch { 
-        toast.error('Could not load chats'); 
+        let loaded = initialSessions;
+        if (loaded.length === 0) {
+          const res = await fetch('/api/chat-sessions');
+          if (res.ok) {
+            const data = await res.json();
+            loaded = data.sessions || [];
+          }
+        }
+        
+        if (loaded.length > 0) {
+          import('@/lib/stores/store').then(({ useAppStore }) => {
+            const currentSessions = useAppStore.getState().chatSessions;
+            const merged = loaded.map(newSession => {
+              const existing = currentSessions.find((s: any) => s.id === newSession.id);
+              // Preserve expanded message history if we already fetched it
+              if (existing && existing.messages?.length > newSession.messages?.length) {
+                return { ...newSession, messages: existing.messages };
+              }
+              return newSession;
+            });
+            setSessions(merged);
+          });
+        } else if (sessions.length === 0 && !pickerParam) {
+          setStudioOpen(true);
+        }
+      } catch {
+        console.error('Failed to sync sessions');
+      } finally {
+        setChatSessionsLoading(false);
       }
-      setChatSessionsLoading(false);
     };
-    void load();
-  }, [hydrated, initialSessions.length]);
+
+    void syncSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
 
   // Open Persona Studio on ?picker=true
   useEffect(() => {
@@ -174,7 +197,7 @@ export function useChatBusinessLogic({
       
       const updatedSessions = sessions.map((s: any) =>
         s.id === selectedSession.id
-          ? { ...s, messages: [{ id: `greeting-${Date.now()}`, text: greeting, sender: 'AI', createdAt: new Date(), grammarCorrection: null, weaknessIdentified: null, bonusXP: false, _showWordHint: true }] }
+          ? { ...s, messages: [{ id: `greeting-${Date.now()}`, text: greeting, sender: 'AI', createdAt: new Date(), grammarCorrection: null, weaknessIdentified: null, xpReward: 0, _showWordHint: true }] }
           : s
       );
       setSessions(updatedSessions as any);

@@ -12,7 +12,6 @@ async function getPublicProfile(username: string) {
       name: true,
       username: true,
       xp: true,
-      currentHP: true,
       diveDepth: true,
       maxDiveDepth: true,
       streak: true,

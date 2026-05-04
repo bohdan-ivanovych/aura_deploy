@@ -35,7 +35,8 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
   const [cards, setCards] = useState<CardEntry[]>(() => [createEmptyCard(), createEmptyCard()]);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
-  const [separator, setSeparator] = useState<'tab' | 'comma'>('tab');
+  const [termSeparator, setTermSeparator] = useState('\\t');
+  const [cardSeparator, setCardSeparator] = useState('\\n');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -78,14 +79,19 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
 
   const handleImportParse = () => {
     if (!importText.trim()) return [];
-    const lines = importText.split(/\r?\n/).filter(line => line.trim().length > 0);
+    
+    const actualCardSep = cardSeparator === '\\n' ? '\n' : cardSeparator;
+    const actualTermSep = termSeparator === '\\t' ? '\t' : termSeparator;
+    
+    const blocks = actualCardSep === '\n' ? importText.split(/\r?\n/) : importText.split(actualCardSep);
     const parsed: CardEntry[] = [];
-    const sepChar = separator === 'tab' ? '\t' : ',';
-    for (const line of lines) {
-      const parts = line.split(sepChar);
+    
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+      const parts = block.split(actualTermSep);
       if (parts.length >= 2) {
         const front = parts[0].trim();
-        const back = parts.slice(1).join(sepChar).trim();
+        const back = parts.slice(1).join(actualTermSep).trim();
         if (front && back) {
           parsed.push({ id: `imp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, front, back });
         }
@@ -311,21 +317,33 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-medium" style={{ color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
-                          Between term and definition:
+                          Term Sep:
                         </span>
-                        <select
-                          value={separator}
-                          onChange={e => setSeparator(e.target.value as 'tab' | 'comma')}
-                          className="text-xs rounded-lg px-2 py-1 outline-none"
+                        <input
+                          type="text"
+                          value={termSeparator}
+                          onChange={e => setTermSeparator(e.target.value)}
+                          className="text-xs rounded-lg px-2 py-1 outline-none w-12 text-center"
                           style={{
                             background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
                             border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
                             color: isDark ? '#fff' : '#1D1D1F',
                           }}
-                        >
-                          <option value="tab">Tab</option>
-                          <option value="comma">Comma</option>
-                        </select>
+                        />
+                        <span className="text-[10px] font-medium ml-1" style={{ color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }}>
+                          Card Sep:
+                        </span>
+                        <input
+                          type="text"
+                          value={cardSeparator}
+                          onChange={e => setCardSeparator(e.target.value)}
+                          className="text-xs rounded-lg px-2 py-1 outline-none w-12 text-center"
+                          style={{
+                            background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
+                            border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                            color: isDark ? '#fff' : '#1D1D1F',
+                          }}
+                        />
                       </div>
                     </div>
                     <textarea

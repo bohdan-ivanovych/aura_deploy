@@ -3,7 +3,7 @@ import { makeAIJsonCompletion, GROQ_MODEL } from '@/lib/ai/multi-groq';
 import { rateLimit } from '@/lib/utils/rate-limit';
 import prisma from '@/lib/db/prisma';
 import * as Sentry from '@sentry/nextjs';
-import { getMaxHP, getHPRegen } from '@/lib/game/levels';
+
 import {
   FREE_CALL_MINUTES,
   CALL_RATE_LIMIT,
@@ -145,12 +145,7 @@ export async function POST(req: Request) {
     const grammarCorrection = aiData.grammarCorrection;
 
     // HP and depth calculation (call exchanges always award HP)
-    const currentHP = userRecord.currentHP ?? 100;
     const diveDepth = userRecord.diveDepth ?? 0;
-    const maxHP = getMaxHP(diveDepth);
-    const regen = getHPRegen(diveDepth);
-    const hpDelta = regen;
-    const newHP = Math.min(maxHP, currentHP + hpDelta);
     const newDepth = Math.min(MAX_DEPTH, diveDepth + CALL_DEPTH_PER_EXCHANGE);
     const newPersonalBest = newDepth > (userRecord.personalBestDepth ?? 0) ? newDepth : userRecord.personalBestDepth;
 
@@ -178,7 +173,7 @@ export async function POST(req: Request) {
         grammarCorrection: grammarCorrection || null,
         weaknessIdentified: null,
         errorSpan: errorSpan as any,
-        bonusXP: !errorSpan,
+        xpReward: errorSpan ? 0 : 1,
       },
     });
 
@@ -187,7 +182,6 @@ export async function POST(req: Request) {
       where: { id: user.id },
       data: {
         callMinutesToday: { increment: 1 },
-        currentHP: newHP,
         diveDepth: newDepth,
         personalBestDepth: newPersonalBest ?? 0,
         lastActiveAt: new Date(),
@@ -197,7 +191,6 @@ export async function POST(req: Request) {
     return Response.json({
       reply,
       sessionId: session.id,
-      hpChange: hpDelta,
       depthChange: newDepth - diveDepth,
       callMinutesLeft: Math.max(0, FREE_CALL_MINUTES - callMinutes - 1),
       isPro: userRecord.plan === 'pro',

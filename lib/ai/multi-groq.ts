@@ -176,6 +176,30 @@ function isRetryable(err: Error): boolean {
   );
 }
 
+/**
+ * Detects degenerate model responses — e.g. when the model echoes the
+ * JSON schema (`{"type":"object"}`) instead of producing real content,
+ * or returns an extremely short string that can't possibly be valid.
+ * These are treated as provider failures so the waterfall continues.
+ */
+function isDegenerateResponse(content: string): boolean {
+  const trimmed = content.trim();
+  // Too short to be a valid JSON chat response
+  if (trimmed.length < 20) return true;
+  // Model literally echoed the response_format schema back
+  if (trimmed === '{"type": "object"}' || trimmed === '{"type":"object"}') return true;
+  // Model returned a schema description without any bubbles/reply
+  try {
+    const parsed = JSON.parse(trimmed);
+    // Valid JSON but has no content fields — just schema metadata
+    const hasContent = parsed.bubbles || parsed.reply || parsed.response || parsed.message;
+    if (!hasContent && (parsed.type || parsed.properties || parsed.schema)) return true;
+  } catch {
+    // Not JSON — that's fine, not degenerate for text mode
+  }
+  return false;
+}
+
 // ─── makeAICompletion (non-streaming) ─────────────────────────────────────────
 
 /**
@@ -203,12 +227,15 @@ export async function makeAICompletion(opts: CompletionOptions): Promise<string>
           setTimeout(() => reject(new Error('Cerebras request timed out')), timeoutMs)
         ),
       ]);
+      if (isDegenerateResponse(result)) {
+        throw new Error(`Cerebras returned degenerate response: ${result.slice(0, 80)}`);
+      }
       recordSuccess(cbCerebras);
       return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       console.warn('[circuit-breaker] Cerebras failed:', lastError.message);
-      if (isRetryable(lastError)) recordFailure(cbCerebras);
+      if (isRetryable(lastError) || lastError.message.includes('degenerate')) recordFailure(cbCerebras);
       // else: let it throw if it's a structural error, but we usually want to waterfall
     }
   }
@@ -236,12 +263,16 @@ export async function makeAICompletion(opts: CompletionOptions): Promise<string>
           ),
         ]);
 
+        const groqContent = (completion as any).choices[0]?.message?.content ?? '';
+        if (isDegenerateResponse(groqContent)) {
+          throw new Error(`Groq returned degenerate response: ${groqContent.slice(0, 80)}`);
+        }
         recordSuccess(entry.cb);
         recordSuccess(cbGroq);
-        return (completion as any).choices[0]?.message?.content ?? '';
+        return groqContent;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        if (isRetryable(lastError)) {
+        if (isRetryable(lastError) || lastError.message.includes('degenerate')) {
           recordFailure(entry.cb);
           if (allGroqKeysDown()) recordFailure(cbGroq);
         } else {

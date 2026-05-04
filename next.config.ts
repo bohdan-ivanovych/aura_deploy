@@ -6,7 +6,7 @@ const isDev = process.env.NODE_ENV !== 'production';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  serverExternalPackages: [],
+  serverExternalPackages: ['pg', '@prisma/client', 'prisma', 'web-push'],
 
   experimental: {
     /* WHY: Tree-shakes barrel exports (index.ts files) of these packages,

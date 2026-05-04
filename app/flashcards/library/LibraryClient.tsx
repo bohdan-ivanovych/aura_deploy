@@ -134,11 +134,45 @@ export default function LibraryClient({ userId, publicDecks: initialDecks, initi
         <div className="max-w-4xl mx-auto space-y-4">
 
           {decks.length === 0 ? (
-            <div className="py-24 flex flex-col items-center justify-center text-center opacity-50">
-              <Library className="w-12 h-12 mb-4" />
-              <p className="font-bold text-lg mb-2">No decks found</p>
-              <p className="text-sm">Try tweaking your search terms.</p>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+              className="py-16 md:py-24 flex flex-col items-center justify-center text-center relative max-w-md mx-auto"
+            >
+              <motion.div
+                animate={{
+                  boxShadow: [
+                    '0 0 40px rgba(0,212,212,0.05), inset 0 0 20px rgba(0,212,212,0.02)',
+                    '0 0 80px rgba(0,212,212,0.15), inset 0 0 40px rgba(0,212,212,0.08)',
+                    '0 0 40px rgba(0,212,212,0.05), inset 0 0 20px rgba(0,212,212,0.02)',
+                  ]
+                }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                className="w-24 h-24 mb-6 rounded-[32px] flex items-center justify-center liquid-glass-strong relative overflow-hidden"
+              >
+                <Library className="w-10 h-10 text-[var(--foreground-muted)] opacity-80 glow-cyan relative z-10" />
+              </motion.div>
+
+              <span className="micro-copy mb-3 block glow-cyan">Data Void</span>
+              <h3 className="brutal-heading text-2xl mb-3">
+                 No Decks <span className="text-[var(--foreground-muted)]">Found</span>
+              </h3>
+              <p className="text-sm text-[var(--foreground-muted)] font-medium leading-relaxed mb-8">
+                The neural archives returned zero results. Try adjusting your query parameters.
+              </p>
+              
+              <button 
+                onClick={() => {
+                  if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(10);
+                  setQuery('');
+                }}
+                className="dopamine-button px-6 py-3 rounded-2xl flex items-center gap-2 bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--foreground)] hover-glow"
+              >
+                <Search className="w-4 h-4 opacity-50" />
+                <span className="text-xs font-black uppercase tracking-widest pt-0.5">Clear Filters</span>
+              </button>
+            </motion.div>
           ) : (
             decks.map((deck) => {
               const isLiked = deck.likes.length > 0;

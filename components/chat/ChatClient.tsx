@@ -6,7 +6,7 @@ import { ChatMessage, ReplyTarget } from '@/components/chat/ChatMessage';
 import { ChatSkeleton, ChatListSkeleton } from '@/components/chat/ChatSkeleton';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { XPIndicator } from '@/components/chat/XPIndicator';
-import { HPDepletionLock } from '@/components/chat/HPDepletionLock';
+
 import { ChatErrorBoundary } from '@/components/chat/ChatErrorBoundary';
 import { ShareAction } from '@/components/chat/ShareAction';
 import { EmptyChatState } from '@/components/chat/EmptyChatState';
@@ -47,11 +47,11 @@ import {
   ChevronLeft, Film, Zap, Phone, Bot, Eye
 } from 'lucide-react';
 import Link from 'next/link';
-import { getMaxHP } from '@/lib/game/levels';
+
 import { useHydratedStore } from '@/lib/stores/store';
 import { useStats } from '@/lib/contexts/stats-context';
 import { haptics } from '@/lib/utils/haptics';
-import { HPBar } from '@/components/chat/HPBar';
+
 import { DailyBounties } from '@/components/chat/DailyBounties';
 import { startInactivityNotifications, stopInactivityNotifications } from '@/lib/notifications';
 import { useChatHandlers } from '@/hooks/useChatHandlers';
@@ -72,7 +72,7 @@ type Message = {
   sender: 'USER' | 'AI' | 'USER_A' | 'USER_B';
   grammarCorrection?: string | null;
   weaknessIdentified?: string | null;
-  bonusXP?: boolean;
+  xpReward?: number;
   suggestion?: string | null;
   createdAt?: Date | string | null;
   edited?: boolean;
@@ -110,7 +110,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
   const hydrated = useHydratedStore();
   const { stats, leveledUp, clearLevelUp } = useStats();
   const {
-    loading, isCreating, lastDepthChange, lastHPDelta, replyTo, setReplyTo,
+    loading, isCreating, lastDepthChange, replyTo, setReplyTo,
     practicePrompt, setPracticePrompt, isMountedRef, limitReached, setLimitReached,
     typingSessionId, handleReaction,
     handleSelectSession, handleDeleteSession, handleEditMessage, handleDeleteMessage,
@@ -172,9 +172,6 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
 
   const [headerCompressed, setHeaderCompressed] = useState(false);
 
-  const currentHP = stats?.currentHP ?? 100;
-  const maxHP = getMaxHP(stats?.diveDepth ?? 0);
-  const isHPDepleted = currentHP <= 0;
 
   const reelMessages = useMemo(
     () => currentMessages
@@ -276,14 +273,14 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
     return { id: found.id!, text: found.text, sender: found.sender === 'USER' ? 'USER' as const : 'AI' as const };
   };
 
-  const sendHandler = useCallback((text: string, _replyToId?: string, isTikTok?: boolean) => {
+  const sendHandler = useCallback((text: string, _replyToId?: string, shortVideoPlatform?: 'tiktok' | 'shorts' | 'reels' | false) => {
     if (!selectedSessionId) return;
-    if (isTikTok) {
+    if (shortVideoPlatform) {
       setIsWatching(true);
       // Auto-clear once loading finishes (safety net: 15s max)
       setTimeout(() => setIsWatching(false), 15000);
     }
-    handleSendMessage(text, selectedSessionId, replyTo, isTikTok ?? false).finally(() => {
+    handleSendMessage(text, selectedSessionId, replyTo, shortVideoPlatform === 'tiktok', !!shortVideoPlatform, shortVideoPlatform || undefined).finally(() => {
       setIsWatching(false);
     });
   }, [selectedSessionId, replyTo, handleSendMessage]);
@@ -331,7 +328,6 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
               personaId={selectedSession.persona.id}
               personaName={selectedSession.persona.name}
               onCallEnd={handleCallEnd}
-              currentHP={stats?.currentHP ?? 100}
               currentDepth={stats?.diveDepth ?? 0}
             />
           )}
@@ -423,9 +419,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="hidden sm:block">
-                    <HPBar hp={currentHP} maxHP={maxHP} hpDelta={lastHPDelta} />
-                  </div>
+
                   <button
                     onClick={() => { haptics.light(); setCallOpen(true); }}
                     className="tap-target rounded-xl transition-colors hover:bg-[var(--surface-hover)]"
@@ -511,7 +505,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                 )}
               </div>
 
-              <HPDepletionLock isVisible={isHPDepleted} variant="mobile" />
+
 
               <AnimatePresence>
                 {limitReached && (
@@ -594,7 +588,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                       </div>
                     </div>
                   )}
-                  <ChatInput onSend={sendHandler} disabled={loading || isHPDepleted}
+                  <ChatInput onSend={sendHandler} disabled={loading}
                     selectedSession={selectedSession} replyTo={replyTo}
                     onCancelReply={handleCancelReply} initialText={practicePrompt} />
                 </>
@@ -712,11 +706,11 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                   )}
                 </div>
 
-                <div className="absolute bottom-28 right-8 z-50 pointer-events-none">
+                <div className="absolute bottom-28 right-8 z-50">
                   <XPIndicator depthChange={lastDepthChange} isUser />
                 </div>
 
-                <HPDepletionLock isVisible={isHPDepleted} variant="desktop" />
+
 
                 <AnimatePresence>
                   {limitReached && (
@@ -788,7 +782,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
                     {showPushPrompt && (
                       <PushPrompt onDismiss={handlePushPromptDismiss} />
                     )}
-                    <ChatInput onSend={sendHandler} disabled={loading || isHPDepleted}
+                    <ChatInput onSend={sendHandler} disabled={loading}
                       selectedSession={selectedSession} replyTo={replyTo}
                       onCancelReply={handleCancelReply} initialText={practicePrompt} />
                   </>

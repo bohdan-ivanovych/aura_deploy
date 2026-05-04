@@ -16,7 +16,7 @@ interface Message {
   senderType: 'USER_A' | 'USER_B' | 'AI_PERSONA';
   grammarCorrection?: string | null;
   weaknessIdentified?: string | null;
-  bonusXP: boolean;
+  xpReward?: number;
 }
 
 const AITypingIndicator = () => (
@@ -351,7 +351,7 @@ export default function RoomPage() {
               senderType={m.senderType}
               grammarCorrection={m.grammarCorrection}
               weaknessIdentified={m.weaknessIdentified}
-              bonusXP={m.bonusXP}
+              xpReward={m.xpReward}
             />
           ))
         )}

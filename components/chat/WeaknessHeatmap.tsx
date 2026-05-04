@@ -190,7 +190,7 @@ export const WeaknessHeatmap = memo(function WeaknessHeatmap() {
                       className="relative flex items-center gap-4 px-5 py-3.5 overflow-hidden cursor-pointer hover:bg-[var(--surface-hover)] transition-colors"
                       onClick={() => {
                         const slug = mapWeaknessToNodeSlug(w.rule);
-                        if (slug) router.push(`/skill-tree/${slug}`);
+                        if (slug) router.push(`/skill-tree?topic=${slug}`);
                         else router.push(`/skill-tree?topic=${encodeURIComponent(w.rule)}`);
                       }}
                     >

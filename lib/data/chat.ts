@@ -9,7 +9,7 @@ const MESSAGE_SELECT = {
   senderPersonaId: true,
   grammarCorrection: true,
   weaknessIdentified: true,
-  bonusXP: true,
+  xpReward: true,
   createdAt: true,
   edited: true,
   originalText: true,
@@ -45,7 +45,7 @@ export async function getChatSessions() {
         where: { isHiddenFromChat: false },
         select: MESSAGE_SELECT,
         orderBy: { createdAt: 'desc' },
-        take: 1,
+        take: 15,
       },
       personas: {
         include: {
@@ -97,7 +97,7 @@ export async function createOrGetChatSession(personaId?: string) {
         where: { isHiddenFromChat: false },
         select: MESSAGE_SELECT,
         orderBy: { createdAt: 'desc' },
-        take: 1,
+        take: 15,
       },
       personas: {
         include: { persona: { select: PERSONA_SELECT } },
@@ -134,7 +134,7 @@ export async function createOrGetChatSession(personaId?: string) {
         where: { isHiddenFromChat: false },
         select: MESSAGE_SELECT,
         orderBy: { createdAt: 'desc' },
-        take: 1,
+        take: 15,
       },
       personas: {
         include: { persona: { select: PERSONA_SELECT } },

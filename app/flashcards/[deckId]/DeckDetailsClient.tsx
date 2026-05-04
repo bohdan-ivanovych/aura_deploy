@@ -126,8 +126,23 @@ export default function DeckDetailsClient({ userId, deckId, deckTitle, cards: in
                   <motion.button
                     onClick={() => {
                       const text = localCards.map((c: any) => `${c.front}\t${c.back}`).join('\n');
-                      navigator.clipboard.writeText(text);
-                      import('sonner').then(m => m.toast.success('Deck copied to clipboard! (Tab separated)'));
+                      if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text);
+                        import('sonner').then(m => m.toast.success('Deck copied to clipboard! (Tab separated)'));
+                      } else {
+                        // Fallback
+                        const textArea = document.createElement('textarea');
+                        textArea.value = text;
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        try {
+                          document.execCommand('copy');
+                          import('sonner').then(m => m.toast.success('Deck copied to clipboard! (Tab separated)'));
+                        } catch (err) {
+                          import('sonner').then(m => m.toast.error('Failed to copy.'));
+                        }
+                        document.body.removeChild(textArea);
+                      }
                     }}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}

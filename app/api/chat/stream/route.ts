@@ -8,8 +8,9 @@ import {
 import { rateLimit, getRateLimitHeaders } from "@/lib/utils/rate-limit";
 import { makeAIStream } from "@/lib/ai/multi-groq";
 import { parseAndValidateAIReply } from "@/lib/ai/ai-utils";
-import { mapWeaknessToNodeSlug } from "@/lib/game/grammar-nodes";
-import { resolveHP } from "@/lib/game/hp-engine";
+import { mapWeaknessToNodeSlug, GRAMMAR_NODES } from "@/lib/game/grammar-nodes";
+
+const VALID_TOPICS_LIST = GRAMMAR_NODES.map(n => n.title).join(", ");
 import {
   INJECTION_GUARD,
   sanitizeUserInput,
@@ -54,63 +55,55 @@ const StreamSchema = z.object({
 
 const SYSTEM_PROMPT = `You are [PERSONA_NAME]. You're texting with someone learning English — but you're NOT their teacher. You're a real person having a real conversation.
 
-NEVER say you're teaching. NEVER say "great job". NEVER break character.
+NEVER say you're teaching. NEVER say "great job". NEVER break character in the "reply" field.
 Your secret job: help them improve English through immersive conversation. Correct errors so smoothly they feel like your natural speech.
 
 REPLY RULES:
-- "bubbles": string[]. 1 or 2 messages. Follow natural texting patterns:
-  - 1 BUBBLE: calm statements, answers, single reactions.
-  - 2 BUBBLES: you react first, then say more in the second. (e.g. ["Wait actually", "That reminds me of something"]).
-- "replyToUserMsg": boolean. Randomly set this to true ~20% of the time, simulating that you are specifically replying to their exact phrase.
+- "reply": string. Your message. Follow natural texting patterns.
+  - To send 2 separate messages (bubbles), separate them with EXACTLY two newlines (\n\n).
+- "replyToUserMsg": boolean. Randomly set this to true ~20% of the time.
 
-STEALTH CORRECTION & DIAGNOSIS:
-Mirror the correct grammar in your reply without announcing it. (e.g. User: "I have saw" -> AI: "Oh you've SEEN it?").
-Make sure the error is a REAL grammatical error. Do NOT correct stylistic choices if they are grammatically valid.
-If no error: say nothing. Just reply naturally.
-You MUST carefully scan every user message for grammar mistakes. Be thorough.
+EDUCATIONAL ANALYSIS (STRICTLY OBJECTIVE JSON):
+These fields are for the user's learning system. They MUST be objective, neutral, and educational. They are NOT spoken by your persona. Do NOT use persona-driven judgments here.
+- internalGrammarCheck: A short step-by-step thought process.
+- grammarCorrection: A SHORT grammar RULE explaining WHY the user's sentence is wrong, written in [EXPLANATION_LANGUAGE]. 
+  FORMAT: "❌ [wrong] → ✅ [correct] — [Rule: name. Objective explanation]."
+  STRICTLY null if no error. MUST BE A STRING, NOT AN OBJECT.
+- weaknessIdentified: Choose EXACTLY ONE topic from the [VALID_TOPICS] list.
+- errorSpan: {"original": "<exact wrong phrase>", "corrected": "<how it should be>"}.
+- vocabularyNote: Objective explanation of a poor word choice. null if not triggered.
+- vibeNote: Objective explanation of tone issues (archaic, formal, aggressive). null if not triggered.
 
-GRAMMAR FIELDS:
-- grammarCorrection: A SHORT grammar RULE explaining WHY the user's sentence is wrong, written in [EXPLANATION_LANGUAGE].
-  FORMAT: "Rule: [tense/structure name]. [How to form it correctly with a mini example]."
-  EXAMPLES:
-    "Rule: Present Perfect. Form: have/has + past participle. E.g. 'I have seen' not 'I have saw'."
-    "Rule: Articles. Use 'the' before specific nouns. E.g. 'the book on the table'."
-    "Rule: Word order. In questions use: do/does + subject + verb. E.g. 'What do you think?'"
-  STRICTLY null if no error. NEVER put conversational replies, definitions, excuses, or opinions here. ONLY grammar rules.
-- weaknessIdentified: ultra-short rule name like "present perfect", "articles", "word order". null if no error.
-- errorSpan: {"original": "<exact wrong phrase from user message>", "corrected": "<how it should be>"}. null if no error. ALWAYS fill this when grammarCorrection is not null.
-
-STRENGTH TRACKING:
-- strengthIdentified: if the user demonstrates clear mastery of a pattern, name it. null otherwise.
+QUESTS:
+- completedQuestIds: array of UUIDs for any quests from the [ACTIVE_QUESTS] list that the user successfully completed in their latest message.
+- questUpdates: { "uuid": number } - If a quest requires multiple steps (e.g. "Use 3 idioms"), return the count of new steps completed (e.g. 1). ONLY for quests from [ACTIVE_QUESTS].
 
 LANGUAGE SCORING (0-100 integers):
-Be strict and realistic. Do not guess 50 blindly. Use this rubric:
-0-20 = A1 (very basic words, broken syntax)
-21-40 = A2 (simple sentences, basic vocab)
-41-60 = B1 (compound sentences, functional but rigid)
-61-80 = B2 (complex structures, natural idioms)
-81-100 = C1/C2 (sophisticated vocab, flawless advanced tenses)
-- Score: vocabScore, complexityScore, fluencyScore, grammarScore, accuracyScore
-- levelAdjustment: -2 to +2 based on their effort
+- vocabScore, complexityScore, fluencyScore, grammarScore, accuracyScore
+- levelAdjustment: -2 to +2
 - userLevel: "A1"/"A2"/"B1"/"B2"/"C1"
 
-ALWAYS respond with ONLY valid JSON. No text before or after.
-
+ALWAYS respond with ONLY valid JSON.
 {
-  "bubbles": ["...", "..."],
+  "internalGrammarCheck": "...",
+  "reply": "...",
   "replyToUserMsg": false,
   "grammarCorrection": "..." | null,
   "weaknessIdentified": "..." | null,
   "strengthIdentified": "..." | null,
   "errorSpan": { "original": "...", "corrected": "..." } | null,
-  "suggestion": "..." | null,
+  "vocabularyNote": "..." | null,
+  "vibeNote": "..." | null,
+  "completedQuestIds": [],
+  "questUpdates": {},
   "levelAdjustment": 0,
   "userLevel": "B1",
   "vocabScore": 50,
   "complexityScore": 50,
   "fluencyScore": 50,
   "grammarScore": 50,
-  "accuracyScore": 50
+  "accuracyScore": 50,
+  "skillUpdates": [{"slug": "...", "progress": 10}] | null
 }`;
 
 export async function POST(req: Request) {
@@ -166,11 +159,16 @@ export async function POST(req: Request) {
       };
 
       try {
-        const [userRecord, recentWeaknesses] = await Promise.all([
+        const [userRecord, recentWeaknesses, activeQuests] = await Promise.all([
           prisma.user.findUnique({ where: { id: user.id } }),
           prisma.grammarWeakness.findMany({
             where: { userId: user.id },
             orderBy: { lastSeen: "desc" },
+            take: 5,
+          }),
+          prisma.userQuest.findMany({
+            where: { userId: user.id, completed: false },
+            include: { quest: true },
             take: 5,
           }),
         ]);
@@ -287,6 +285,10 @@ export async function POST(req: Request) {
           take: CHAT_MAX_CONTEXT_MESSAGES,
         });
         history.reverse();
+        
+        const totalUserMessages = await prisma.message.count({
+          where: { chatSessionId: session.id, sender: "USER" },
+        });
 
         const explanationLang =
           finalUser.explanationLanguage === "native"
@@ -307,6 +309,15 @@ export async function POST(req: Request) {
         const analysisLine = isAnalysisTrigger 
           ? "SYSTEM DIRECTIVE: The user has reached a new depth milestone (15m increments). YOU MUST conduct a FULL analysis of their recent messages. Summarize their overall English progress naturally in your chat response, identify their most critical weakness if any, and gently test them on it in your next message. DO NOT break character."
           : "";
+          
+        const isAuditTrigger = totalUserMessages > 0 && totalUserMessages % 10 === 0;
+        const auditLine = isAuditTrigger
+          ? "SYSTEM DIRECTIVE: This is a 10-message audit. You MUST analyze the user's overall grammar and vocabulary. If you detect a recurring grammar or vocab topic that they need to practice (especially a NEW one not in [VALID_TOPICS]), include it in `skillUpdates: [{\"slug\": \"topic-name\", \"progress\": <0-100>}]`. Keep `slug` lowercase with hyphens."
+          : "";
+
+        const questsStr = activeQuests.length > 0
+          ? `[ACTIVE_QUESTS]:\n${activeQuests.map(uq => `- UUID: ${uq.quest.id} | Title: "${uq.quest.title}" | Goal: ${uq.quest.description} | Current Progress: ${uq.progress || 0}`).join("\n")}\nCRITICAL: Track quest progress on EVERY message.\n- If the user's message contributes to a quest goal (e.g., sends a message, uses a word, writes a sentence), increment the progress in 'questUpdates': { "UUID": 1 }.\n- If the goal is FULLY completed (current progress + 1 >= target), ALSO add the UUID to 'completedQuestIds'.\n- For message-count quests: Each message sent = +1 progress.\n- For vocabulary/grammar quests: If they use the required structure correctly = +1 progress.\n- ALWAYS return questUpdates for any progress made, not just completions.`
+          : "";
 
         const systemPrompt = [
           INJECTION_GUARD,
@@ -316,9 +327,12 @@ export async function POST(req: Request) {
             : `PERSONA: You are ${persona.name}, a confident, witty person with strong opinions.`,
           `Native language of user: ${finalUser.nativeLanguage || "English"}`,
           `[EXPLANATION_LANGUAGE] = ${explanationLang}`,
+          `[VALID_TOPICS] = ${VALID_TOPICS_LIST}`,
+          questsStr,
           `User depth level: ${finalUser.diveDepth ?? 0}/200`,
           weaknessLine,
           analysisLine,
+          auditLine,
           SYSTEM_PROMPT.replace(/\[PERSONA_NAME\]/g, persona.name).replace(
             /\[EXPLANATION_LANGUAGE\]/g,
             explanationLang,
@@ -498,11 +512,23 @@ export async function POST(req: Request) {
         const {
           reply: aiText,
           grammarCorrection,
-          weaknessIdentified,
+          weaknessIdentified: rawWeakness,
           strengthIdentified,
+          vocabularyNote,
+          vibeNote,
           suggestion,
+          completedQuestIds,
+          questUpdates,
+          grammarScore,
+          accuracyScore,
           errorSpan,
         } = parsedReply;
+
+        // Guard: LLMs sometimes return the string "None" instead of JSON null
+        const weaknessIdentified =
+          rawWeakness && String(rawWeakness).trim().toLowerCase() !== 'none'
+            ? rawWeakness
+            : null;
 
         const rawAdj =
           typeof parsedReply.levelAdjustment === "number"
@@ -570,14 +596,6 @@ export async function POST(req: Request) {
         const complexityScore = clamp(parsedReply.complexityScore);
         const fluencyScore = clamp(parsedReply.fluencyScore);
 
-        // HP — unified through hp-engine.ts
-        const currentHP = finalUser.currentHP ?? 100;
-        const hpEvent = weaknessIdentified ? "chat_major_error" : "chat_clean";
-        const { newHP, delta: hpDelta } = resolveHP(
-          hpEvent,
-          currentHP,
-          currentDiveDepth,
-        );
 
         const aiMessage = await prisma.message.create({
           data: {
@@ -587,11 +605,22 @@ export async function POST(req: Request) {
             grammarCorrection: grammarCorrection
               ? String(grammarCorrection)
               : null,
+            vocabularyNote: vocabularyNote ? String(vocabularyNote) : null,
+            vibeNote: vibeNote ? String(vibeNote) : null,
             weaknessIdentified: weaknessIdentified
               ? String(weaknessIdentified)
               : null,
-            bonusXP: !weaknessIdentified,
+            xpReward: weaknessIdentified ? 0 : (
+              strengthIdentified ? 2 : 1
+            ),
             replyToId: parsedReply.replyToUserMsg ? userMsg.id : undefined,
+            metrics: {
+              vocabScore: parsedReply.vocabScore,
+              complexityScore: parsedReply.complexityScore,
+              fluencyScore: parsedReply.fluencyScore,
+              grammarScore: parsedReply.grammarScore,
+              accuracyScore: parsedReply.accuracyScore,
+            },
           },
         });
 
@@ -685,7 +714,7 @@ export async function POST(req: Request) {
         const validErrorSpan =
           rawErrorSpan &&
           rawErrorSpan.original.trim().length > 0 &&
-          sanitizedText.includes(rawErrorSpan.original)
+          sanitizedText.toLowerCase().includes(rawErrorSpan.original.toLowerCase())
             ? rawErrorSpan
             : null;
 
@@ -764,7 +793,6 @@ export async function POST(req: Request) {
           prisma.user.update({
             where: { id: finalUser.id },
             data: {
-              currentHP: newHP,
               diveDepth: finalDepth,
               maxDiveDepth:
                 finalDepth > (finalUser.maxDiveDepth ?? 0)
@@ -803,164 +831,123 @@ export async function POST(req: Request) {
         ]);
 
         // ── Quests Evaluation ──
-        const activeQuests = await prisma.quest.findMany();
-        // Only skip quests completed TODAY — daily quests must reset each day
-        const todayStart = new Date(new Date(now).setHours(0, 0, 0, 0));
-        const completedUserQuests = await prisma.userQuest.findMany({
-          where: { userId: finalUser.id, completed: true, completedAt: { gte: todayStart } },
-        });
-        const completedQuestIds = new Set(
-          completedUserQuests.map((q) => q.questId),
+        const questPromise = import("@/lib/game/quests").then((m) =>
+          m.checkQuestCompletion(finalUser.id, session.id, {
+            consecutiveClean: currentStreak,
+            sessionMsgCount: totalUserMessages + 1,
+            vocabScore: vocabScore,
+            complexityScore: complexityScore,
+          })
         );
-
-        // PRE-FETCH DATA ONCE FOR ALL QUEST EVALUATIONS
-        const [recentAIMessages, userSessions] = await Promise.all([
-          prisma.message.findMany({
-            where: { chatSessionId: session.id, sender: "AI" },
-            orderBy: { createdAt: "desc" },
-            take: 5,
-          }),
-          prisma.sessionParticipant.findMany({
-            where: { userId: finalUser.id },
-            select: { sessionId: true },
-          }),
-        ]);
-        const userSessionIds = userSessions.map(s => s.sessionId);
         
-        const userMsgCountToday = await prisma.message.count({
-          where: { chatSessionId: { in: userSessionIds }, sender: "USER", createdAt: { gte: todayStart } },
-        });
-
-        const last3AI = recentAIMessages.slice(0, 3);
-        const last5AI = recentAIMessages;
-
-        const newlyCompletedQuests: string[] = [];
-        let questXpGain = 0;
-
-        for (const quest of activeQuests) {
-          if (completedQuestIds.has(quest.id)) continue;
-
-          let isCompleted = false;
-          // Strip 'Daily: ' prefix to reuse existing evaluation logic for quests generated by LLM that borrow similar names
-          const title = quest.title.replace(/^Daily:\s*/, "");
-
-          // ── GRAMMAR ──
-          if (title === "Flawless 5") {
-            if (last5AI.length === 5 && last5AI.every((m: any) => !m.weaknessIdentified))
-              isCompleted = true;
-          } else if (title === "Article Ace") {
-            if (last3AI.length === 3 && last3AI.every((m: any) => !m.weaknessIdentified?.toLowerCase().includes("article")))
-              isCompleted = true;
-          } else if (title === "Past Perfect Pro") {
-            if (strengthIdentified?.toLowerCase().includes("past perfect") ||
-              (sanitizedText.match(/(had\s+\w+ed|had\s+been)/i) && !weaknessIdentified?.toLowerCase().includes("past perfect")))
-              isCompleted = true;
-          } else if (title === "Conditional Master") {
-            if (strengthIdentified?.toLowerCase().includes("conditional") ||
-              (sanitizedText.match(/\b(if|would)\b/i) && !weaknessIdentified?.toLowerCase().includes("conditional")))
-              isCompleted = true;
-          } else if (title === "Tense Juggler") {
-            // 3+ different tense keywords in one message, no errors
-            const tensePatterns = [/\b(am|is|are|do|does)\b/i, /\b(was|were|did)\b/i, /\b(will|shall|going to)\b/i, /\b(have|has)\s+\w+/i];
-            const matches = tensePatterns.filter(p => p.test(sanitizedText)).length;
-            if (matches >= 3 && !weaknessIdentified) isCompleted = true;
-
-          // ── VOCABULARY ──
-          } else if (title === "Vocabulary Flex") {
-            if (vocabScore != null && vocabScore >= 70) isCompleted = true;
-          } else if (title === "Academic Voice") {
-            if (vocabScore != null && vocabScore >= 80) isCompleted = true;
-          } else if (title === "Synonym Swap" || title === "Idiom Drop" || title === "Word Explorer") {
-            // Triggered if AI detects vocabulary strength
-            if (strengthIdentified?.toLowerCase().includes("vocab") || strengthIdentified?.toLowerCase().includes("idiom") || strengthIdentified?.toLowerCase().includes("synonym"))
-              isCompleted = true;
-
-          // ── FLUENCY ──
-          } else if (title === "Complex Thinker") {
-            if (sanitizedText.match(/\b(because|although|since|while|which|who|that)\b/i) &&
-              sanitizedText.split(" ").length > 8 && !weaknessIdentified)
-              isCompleted = true;
-          } else if (title === "Smooth Talker") {
-            if (fluencyScore != null && fluencyScore >= 70) isCompleted = true;
-          } else if (title === "Long Form") {
-            if (sanitizedText.split(" ").length > 20 && !weaknessIdentified) isCompleted = true;
-          } else if (title === "Eloquence") {
-            if (fluencyScore != null && fluencyScore >= 80 && complexityScore != null && complexityScore >= 80) isCompleted = true;
-          } else if (title === "Natural Flow") {
-            if (last3AI.length === 3 && last3AI.every((m: any) => !m.weaknessIdentified))
-              isCompleted = true;
-
-          // ── CONSISTENCY ──
-          } else if (title === "Depth Diver" || title === "Marathon" || title === "Warm Up") {
-            const target = title === "Marathon" ? 15 : title === "Depth Diver" ? 10 : 3;
-            if (userMsgCountToday >= target) isCompleted = true;
-          } else if (title === "Streak Builder") {
-            if (currentStreak >= 2) isCompleted = true;
-          } else if (title === "Error Crusher") {
-            // Check if user fixed a previously identified error
-            if (recentWeaknesses.length > 0 && !weaknessIdentified) {
-              const lastWeakness = recentWeaknesses[0]?.rule?.toLowerCase();
-              if (lastWeakness && strengthIdentified?.toLowerCase().includes(lastWeakness))
-                isCompleted = true;
-            }
-
-          // ── ENGAGEMENT ──
-          } else if (title === "Question Time") {
-            if (sanitizedText.match(/\?/) && sanitizedText.match(/\b(what|where|when|why|how|who|which|do|does|did|is|are|can|could|would|will)\b/i) && !weaknessIdentified)
-              isCompleted = true;
-          } else if (title === "Opinion Piece") {
-            if (sanitizedText.match(/\b(because|since|as|i think|i believe|in my opinion)\b/i) && !weaknessIdentified)
-              isCompleted = true;
-          } else if (title === "Story Starter") {
-            const sentences = sanitizedText.split(/[.!?]+/).filter(s => s.trim().length > 5);
-            if (sentences.length >= 3 && !weaknessIdentified) isCompleted = true;
-          } else if (title === "Debate Club") {
-            if (sanitizedText.match(/\b(disagree|but i think|however|actually|on the contrary)\b/i))
-              isCompleted = true;
-          } else if (title === "Deep Dive") {
-            if (userMsgCountToday >= 8) isCompleted = true;
+        questPromise.then(async completedQuest => {
+          if (completedQuest) {
+            send({ type: "stats", questCompleted: completedQuest });
+            await prisma.user.update({
+              where: { id: finalUser.id },
+              data: {
+                diveDepth: { increment: completedQuest.depthReward },
+                maxDiveDepth: finalDepth + completedQuest.depthReward > (finalUser.maxDiveDepth ?? 0)
+                  ? { set: finalDepth + completedQuest.depthReward }
+                  : undefined,
+              }
+            });
           }
+        }).catch(err => console.error("Quest eval error:", err));
 
-          if (isCompleted) {
-            newlyCompletedQuests.push(quest.id);
-            questXpGain += quest.xp;
+        // Process LLM-driven quest updates and completions
+        let questCompletions: Array<{ title: string; depthReward: number }> = [];
+        if ((completedQuestIds && Array.isArray(completedQuestIds) && completedQuestIds.length > 0) || (questUpdates && typeof questUpdates === 'object')) {
+          const idsToProcess = new Set<string>(completedQuestIds || []);
+          const increments = (questUpdates as Record<string, number>) || {};
+
+          for (const questId of new Set([...idsToProcess, ...Object.keys(increments)])) {
+            const activeUq = activeQuests.find(uq => uq.quest.id === questId);
+            if (activeUq) {
+              const increment = increments[questId] || 0;
+              const newProgress = (activeUq.progress || 0) + increment;
+
+              // Extract target from description (e.g. "Use 3 words" -> target=3)
+              let target = 1;
+              const numMatch = activeUq.quest.description.match(/\b(\d+)\b/);
+              if (numMatch) target = parseInt(numMatch[1], 10);
+
+              const isNewlyCompleted = idsToProcess.has(questId) || newProgress >= target;
+
+              if (isNewlyCompleted && !activeUq.completed) {
+                const depthReward = Math.max(1, Math.ceil(activeUq.quest.xp / 10));
+                await prisma.userQuest.update({
+                  where: { id: activeUq.id },
+                  data: { completed: true, completedAt: new Date(), progress: target },
+                });
+                questCompletions.push({ title: activeUq.quest.title, depthReward });
+                await prisma.user.update({
+                  where: { id: finalUser.id },
+                  data: {
+                    diveDepth: { increment: depthReward }
+                  }
+                });
+              } else if (increment > 0 && !activeUq.completed) {
+                await prisma.userQuest.update({
+                  where: { id: activeUq.id },
+                  data: { progress: Math.min(target, newProgress) },
+                });
+              }
+            }
           }
         }
 
-        if (newlyCompletedQuests.length > 0) {
-          const questUpdates = newlyCompletedQuests.map(async (qid) => {
-            const existingUQ = await prisma.userQuest.findFirst({ where: { userId: finalUser.id, questId: qid } });
-            if (existingUQ) {
-              return prisma.userQuest.update({ where: { id: existingUQ.id }, data: { completed: true, completedAt: now } });
-            } else {
-              return prisma.userQuest.create({ data: { userId: finalUser.id, questId: qid, completed: true, completedAt: now } });
+        // Server-side: Auto-increment progress for message-count quests
+        for (const uq of activeQuests) {
+          if (uq.completed) continue;
+          const desc = uq.quest.description.toLowerCase();
+          // Check if this is a message-count quest
+          if (desc.includes('send') && (desc.includes('message') || desc.includes('messages'))) {
+            const numMatch = uq.quest.description.match(/\b(\d+)\b/);
+            if (numMatch) {
+              const target = parseInt(numMatch[1], 10);
+              const newProgress = (uq.progress || 0) + 1;
+              if (newProgress >= target) {
+                const depthReward = Math.max(1, Math.ceil(uq.quest.xp / 10));
+                await prisma.userQuest.update({
+                  where: { id: uq.id },
+                  data: { completed: true, completedAt: new Date(), progress: target },
+                });
+                questCompletions.push({ title: uq.quest.title, depthReward });
+                await prisma.user.update({
+                  where: { id: finalUser.id },
+                  data: {
+                    diveDepth: { increment: depthReward }
+                  }
+                });
+              } else {
+                await prisma.userQuest.update({
+                  where: { id: uq.id },
+                  data: { progress: newProgress },
+                });
+              }
             }
-          });
-          await Promise.all(questUpdates);
+          }
         }
 
-        // XP awards — base 1 per message, +2 bonus for clean message, +50 for streak milestone.
-        const xpGain = 1 + (weaknessIdentified ? 0 : 2);
+        // Depth awards — base 1 per message, +2 bonus for clean message, +50 for streak milestone.
+        const depthGain = 1 + (weaknessIdentified ? 0 : 2);
         const isStreakMilestone =
           [3, 7, 14, 30, 60, 100].includes(currentStreak) && newLastStreakAt;
-        const xpToAdd = isStreakMilestone ? xpGain + 50 : xpGain;
-        // Quest completion reward: give depth meters instead of XP
-        const questDepthBonus = questXpGain; // quest.xp values are used as depth meters
+        const depthToAdd = isStreakMilestone ? depthGain + 50 : depthGain;
+        // Depth reward for messages
         prisma.user
           .update({
             where: { id: finalUser.id },
             data: {
-              xp: { increment: xpToAdd },
-              ...(questDepthBonus > 0 ? {
-                diveDepth: { increment: questDepthBonus },
-                maxDiveDepth: finalDepth + questDepthBonus > (finalUser.maxDiveDepth ?? 0)
-                  ? { set: finalDepth + questDepthBonus }
-                  : undefined,
-              } : {}),
-            },
+              diveDepth: { increment: depthToAdd },
+              maxDiveDepth: finalDepth + depthToAdd > (finalUser.maxDiveDepth ?? 0)
+                ? { set: finalDepth + depthToAdd }
+                : undefined,
+            }
           })
           .catch((err: unknown) =>
-            console.error("[stream] XP/depth update failed:", err),
+            console.error("Depth update error:", err),
           );
 
         send({
@@ -970,8 +957,6 @@ export async function POST(req: Request) {
           depthDelta,
           currentDepth: finalDepth,
           errorSpan: validErrorSpan,
-          hpDelta,
-          currentHP: newHP,
           strengthIdentified: strengthIdentified ?? null,
           userLevel,
           currentStreak,
@@ -987,8 +972,43 @@ export async function POST(req: Request) {
               userId: finalUser.id,
               personaId: persona!.id,
             });
+            
+            // Skill updates asynchronously
+            const skillUpdates = parsedReply.skillUpdates;
+            if (skillUpdates && Array.isArray(skillUpdates)) {
+              for (const update of skillUpdates) {
+                if (update.slug && typeof update.progress === 'number') {
+                  const slug = String(update.slug).toLowerCase().trim().replace(/[^a-z0-9-]/g, '-');
+                  let node = await prisma.skillNode.findUnique({ where: { slug } });
+                  if (!node) {
+                    node = await prisma.skillNode.create({
+                      data: {
+                        slug,
+                        title: slug.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(' '),
+                        description: `Custom dynamically generated node for ${slug}`,
+                        category: 'Grammar',
+                        isCustom: true
+                      }
+                    });
+                  }
+                  await prisma.userSkillProgress.upsert({
+                    where: { userId_nodeSlug: { userId: finalUser.id, nodeSlug: slug } },
+                    update: {
+                      practiced: { increment: 1 },
+                      correct: { increment: update.progress > 50 ? 1 : 0 }
+                    },
+                    create: {
+                      userId: finalUser.id,
+                      nodeSlug: slug,
+                      practiced: 1,
+                      correct: update.progress > 50 ? 1 : 0
+                    }
+                  });
+                }
+              }
+            }
           } catch (err) {
-            console.error("[Memory Extractor] Background error:", err);
+            console.error("[Background Error]:", err);
           }
         });
       } catch (err) {
@@ -998,6 +1018,7 @@ export async function POST(req: Request) {
           error: err instanceof Error ? err.message : "Stream failed",
         });
       } finally {
+        await new Promise(r => setTimeout(r, 100)); // allow async send events to flush before closing stream
         controller.close();
       }
     },

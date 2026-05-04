@@ -16,7 +16,7 @@ interface RoomAIResponse {
   targetUser: 'USER_A' | 'USER_B';
   grammarCorrection: string | null;
   weaknessIdentified: string | null;
-  bonusXP: boolean;
+  xpReward: number;
 }
 
 const ROOM_SYSTEM_PROMPT_BODY = `You are Aura, a sharp referee/moderator in a high-stakes English Grammar Deathmatch between two users.
@@ -28,7 +28,7 @@ JSON SHAPE:
   "targetUser": "USER_A" | "USER_B",
   "grammarCorrection": null | "short correction text",
   "weaknessIdentified": null | "short name of the core grammar rule",
-  "bonusXP": boolean
+  "xpReward": number
 }
 
 Rules:
@@ -36,7 +36,7 @@ Rules:
 - Roast or praise them based on their English proficiency.
 - Set "targetUser" to the user who last spoke or the one you are primarily addressing.
 - Provide grammar corrections as needed.
-- bonusXP: true only when a user produces a genuinely impressive sentence.
+- xpReward: 2 only when a user produces a genuinely impressive sentence. Otherwise 1. 0 for errors.
 `;
 
 export async function sendRoomMessage(
@@ -97,7 +97,7 @@ export async function sendRoomMessage(
         roomId,
         grammarCorrection: parsed.grammarCorrection,
         weaknessIdentified: parsed.weaknessIdentified,
-        bonusXP: parsed.bonusXP,
+        xpReward: typeof parsed.xpReward === 'number' ? parsed.xpReward : (parsed.weaknessIdentified ? 0 : 1),
       },
     });
 

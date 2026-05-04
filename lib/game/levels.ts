@@ -1,12 +1,7 @@
 // Aura Level System — based on Dive Depth (0–200m)
 // XP removed: depth IS the single progression metric.
 
-import {
-  INITIAL_HP,
-  HP_PER_LEVEL,
-  BASE_REGEN,
-  REGEN_LEVEL_INTERVAL,
-} from '@/src/config/gameplayConfig';
+
 
 export interface LevelInfo {
   level: number;
@@ -94,12 +89,3 @@ export function getLevelTable() {
   }));
 }
 
-export function getMaxHP(depth: number): number {
-  const { level } = getLevelInfo(depth);
-  return INITIAL_HP + (level - 1) * HP_PER_LEVEL;
-}
-
-export function getHPRegen(depth: number): number {
-  const { level } = getLevelInfo(depth);
-  return BASE_REGEN + Math.floor((level - 1) / REGEN_LEVEL_INTERVAL);
-}

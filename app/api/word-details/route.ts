@@ -36,42 +36,24 @@ export async function POST(req: Request) {
       }
     } catch {}
 
-    // 2. Explanation — language-aware
+    // 2. Explanation / Usage (Always English)
     let explanation = '';
 
-    if (!useNative) {
-      // English: try free Dictionary API first (fast, no token cost)
-      try {
-        const dRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-        if (dRes.ok) {
-          const dData = await dRes.json();
-          const def = dData[0]?.meanings[0]?.definitions[0]?.definition;
-          if (def) explanation = def;
-        }
-      } catch {}
-    }
+    try {
+      const groq = getGroqClient();
+      const prompt = `Provide a concise English usage explanation for the phrase/word "${word}". Provide general usage that would be helpful on a flashcard. Context from the conversation: "${contextSentence}". DO NOT mention the word "context" or "sentence" in your output. DO NOT say "In this sentence". Just give the general usage. Max 1-2 sentences. Only the usage text, no extra formatting.`;
 
-    // If native language requested OR English dictionary failed, use Groq
-    if (!explanation) {
-      try {
-        const groq = getGroqClient();
-        const ctx = contextSentence ? `Context: "${contextSentence}"` : '';
-        const prompt = useNative
-          ? `Provide a short, clear explanation of the English word "${word}" in ${explanationLang}. ${ctx}\nMax 1-2 sentences. Only the explanation, no extra formatting.`
-          : `Define "${word}" in simple English. ${ctx}\nMax 1 sentence. Only the definition.`;
-
-        const completion = await Promise.race([
-          groq.chat.completions.create({
-            model: GROQ_MODEL,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.3,
-            max_tokens: 120,
-          }),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000)),
-        ]);
-        explanation = completion.choices[0]?.message?.content?.trim() || '';
-      } catch {}
-    }
+      const completion = await Promise.race([
+        groq.chat.completions.create({
+          model: GROQ_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.3,
+          max_tokens: 120,
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000)),
+      ]);
+      explanation = completion.choices[0]?.message?.content?.trim() || '';
+    } catch {}
 
     return NextResponse.json({
       translation: translation || '',

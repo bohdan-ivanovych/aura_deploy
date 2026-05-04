@@ -34,16 +34,17 @@ async function getNativeLang(): Promise<string> {
   return cachedNativeLang!;
 }
 
-const POPUP_W = 320;
+const POPUP_W = 280;
+const POPUP_W_DESKTOP = 320;
 const INPUT_SAFE_BOTTOM = 120;
 
-function calcPopupStyle(rect: DOMRect, popupH: number) {
+function calcPopupStyle(rect: DOMRect, popupH: number, popupW: number = POPUP_W) {
   const vvHeight = window.visualViewport?.height ?? window.innerHeight;
   const vvOffsetTop = window.visualViewport?.offsetTop ?? 0;
   const vvOffsetLeft = window.visualViewport?.offsetLeft ?? 0;
 
   const rawLeft = rect.left - vvOffsetLeft + rect.width / 2;
-  const clampedLeft = Math.max(POPUP_W / 2 + 8, Math.min(window.innerWidth - POPUP_W / 2 - 8, rawLeft));
+  const clampedLeft = Math.max(popupW / 2 + 8, Math.min(window.innerWidth - popupW / 2 - 8, rawLeft));
 
   const rectTopInVV = rect.top - vvOffsetTop;
   const rectBottomInVV = rect.bottom - vvOffsetTop;
@@ -66,65 +67,105 @@ function calcPopupStyle(rect: DOMRect, popupH: number) {
 export default function MagicTextWrapper({ children, fullMessageText }: MagicTextWrapperProps) {
   const { theme } = useTheme();
   const isDark = theme !== 'light';
+  
   const accentColor = isDark ? '#00d4d4' : '#0891b2';
   const popupBg = isDark ? 'rgba(10,12,20,0.96)' : 'rgba(255,255,255,0.97)';
   const popupBorder = isDark ? `rgba(0,212,212,0.22)` : 'rgba(8,145,178,0.2)';
   const textPrimary = isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.85)';
   const textMuted = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)';
   const dividerColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
+
   const [selection, setSelection] = useState<{
     text: string;
     rect: DOMRect | null;
     isPhrase: boolean;
   } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  
+  const [isSaving, setIsSaving] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showTranslation, setShowTranslation] = useState(false);
   const [translation, setTranslation] = useState('');
+  
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getNativeLang();
+  }, []);
 
   const handleSelection = useCallback(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-      setSelection(null);
-      setShowTranslation(false);
+      if (selection) dismiss();
       return;
     }
 
     const selectedText = sel.toString().trim();
-    if (selectedText.length < 2) {
-      setSelection(null);
-      return;
-    }
+    if (selectedText.length < 2) return;
 
     if (containerRef.current && !containerRef.current.contains(sel.anchorNode)) {
-      setSelection(null);
       return;
     }
 
     try {
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      const wordCount = selectedText.trim().split(/\s+/).length;
+      const wordCount = selectedText.split(/\s+/).length;
+      
       setSelection({ text: selectedText, rect, isPhrase: wordCount > 1 });
       setShowTranslation(false);
       setTranslation('');
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('magic-popup-open'));
+        window.dispatchEvent(new CustomEvent('word-popup-close', { detail: { sourceId: 'magic-wrapper' } }));
+      }
     } catch {
       setSelection(null);
     }
+  }, [selection]);
+
+  const dismiss = useCallback(() => {
+    window.speechSynthesis?.cancel();
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+    setShowTranslation(false);
+    setTranslation('');
+    setIsSpeaking(false);
   }, []);
 
   useEffect(() => {
-    document.addEventListener('mouseup', handleSelection);
-    document.addEventListener('touchend', handleSelection);
-    return () => {
-      document.removeEventListener('mouseup', handleSelection);
-      document.removeEventListener('touchend', handleSelection);
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (selection && containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        dismiss();
+      }
     };
-  }, [handleSelection]);
+
+    const handleScrollOrResize = () => {
+      if (selection) dismiss();
+    };
+
+    const handleWordPopupOpen = () => {
+      if (selection) dismiss();
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    window.addEventListener('scroll', handleScrollOrResize, { passive: true });
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('word-popup-open', handleWordPopupOpen);
+    
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      window.removeEventListener('scroll', handleScrollOrResize);
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('word-popup-open', handleWordPopupOpen);
+    };
+  }, [selection, dismiss]);
 
   const fetchTranslation = async () => {
-    if (!selection || translation) return;
+    if (!selection || translation || isTranslating) return;
+    setIsTranslating(true);
+    
     try {
       const targetLang = await getNativeLang();
       const res = await fetch('/api/translate', {
@@ -133,11 +174,13 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
         body: JSON.stringify({ text: selection.text, targetLang }),
       });
       const data = await res.json();
-      setTranslation(data.translated || '');
+      setTranslation(data.translated || '—');
       setShowTranslation(true);
     } catch {
       setTranslation('—');
       setShowTranslation(true);
+    } finally {
+      setIsTranslating(false);
     }
   };
 
@@ -152,8 +195,8 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
   };
 
   const saveToDeck = async () => {
-    if (!selection || isLoading) return;
-    setIsLoading(true);
+    if (!selection || isSaving) return;
+    setIsSaving(true);
     try {
       const response = await fetch('/api/create-flashcard', {
         method: 'POST',
@@ -176,33 +219,28 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
         description: `"${selection.text}" added to your deck.`,
       });
 
-      window.getSelection()?.removeAllRanges();
-      setSelection(null);
-      setShowTranslation(false);
-      setTranslation('');
+      dismiss();
     } catch (error) {
       toast.error('Sync failed', {
         description: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     } finally {
-      setIsLoading(false);
+      setIsSaving(false);
     }
   };
 
-  const dismiss = () => {
-    window.speechSynthesis?.cancel();
-    window.getSelection()?.removeAllRanges();
-    setSelection(null);
-    setShowTranslation(false);
-    setTranslation('');
-    setIsSpeaking(false);
-  };
-
   const popupH = showTranslation && translation ? 120 : 58;
-  const popupStyle = selection?.rect ? calcPopupStyle(selection.rect, popupH) : {};
+  const isDesktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+  const currentPopupW = isDesktop ? Math.min(POPUP_W_DESKTOP, 320) : POPUP_W;
+  const popupStyle = selection?.rect ? calcPopupStyle(selection.rect, popupH, currentPopupW) : {};
 
   return (
-    <div ref={containerRef} className="relative inline-block w-full">
+    <div 
+      ref={containerRef} 
+      className="relative inline-block w-full"
+      onMouseUp={handleSelection}
+      onTouchEnd={() => setTimeout(handleSelection, 50)} 
+    >
       {children}
 
       <AnimatePresence>
@@ -216,7 +254,8 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
             style={{
               position: 'fixed',
               zIndex: 9999,
-              width: POPUP_W,
+              width: currentPopupW,
+              maxWidth: '320px',
               ...popupStyle,
               transform: 'translateX(-50%)',
             }}
@@ -226,12 +265,12 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
               style={{
                 background: popupBg,
                 border: `1px solid ${popupBorder}`,
+                width: '100%',
               }}
             >
-              {/* Header: selected text + type badge */}
               <div className="px-3 pt-2.5 pb-1.5 flex items-center gap-2 border-b"
                 style={{ borderColor: dividerColor }}>
-                <span className="text-xs font-bold truncate flex-1" style={{ color: textPrimary }}>
+                <span className="text-xs font-bold flex-1 break-words line-clamp-2" style={{ color: textPrimary, wordBreak: 'break-word' }}>
                   &ldquo;{selection.text}&rdquo;
                 </span>
                 <span className="text-[8px] font-black uppercase tracking-[0.2em] shrink-0 px-1.5 py-0.5 rounded-full"
@@ -244,7 +283,6 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
                 </span>
               </div>
 
-              {/* Translation row */}
               {showTranslation && translation && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
@@ -256,22 +294,25 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
                 </motion.div>
               )}
 
-              {/* Action buttons row */}
               <div className="flex items-stretch divide-x" style={{ borderColor: dividerColor }}>
                 <button
                   onClick={fetchTranslation}
-                  disabled={showTranslation && !!translation}
-                  className="flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2.5 transition-all disabled:opacity-40 min-w-0"
+                  disabled={showTranslation || isTranslating}
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2.5 transition-all disabled:opacity-50 min-w-0 hover:bg-black/5 dark:hover:bg-white/5"
                   style={{ color: textMuted }}
                 >
-                  <BookOpen className="w-3.5 h-3.5 shrink-0" style={{ color: isDark ? '#60a5fa' : '#3b82f6' }} />
-                  <span className="text-[9px] font-bold leading-none">{showTranslation ? 'Done' : 'Translate'}</span>
+                  {isTranslating ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" style={{ color: isDark ? '#60a5fa' : '#3b82f6' }} />
+                  ) : (
+                    <BookOpen className="w-3.5 h-3.5 shrink-0" style={{ color: isDark ? '#60a5fa' : '#3b82f6' }} />
+                  )}
+                  <span className="text-[9px] font-bold leading-none">{isTranslating ? 'Wait...' : showTranslation ? 'Done' : 'Translate'}</span>
                 </button>
 
                 <button
                   onClick={speak}
                   disabled={isSpeaking}
-                  className="flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2.5 transition-all"
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2.5 transition-all hover:bg-black/5 dark:hover:bg-white/5"
                   style={{ color: isSpeaking ? accentColor : textMuted }}
                 >
                   <Volume2 className={`w-3.5 h-3.5 shrink-0 ${isSpeaking ? 'animate-pulse' : ''}`} />
@@ -280,19 +321,19 @@ export default function MagicTextWrapper({ children, fullMessageText }: MagicTex
 
                 <button
                   onClick={saveToDeck}
-                  disabled={isLoading}
-                  className="flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2.5 transition-all"
+                  disabled={isSaving}
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 px-2 py-2.5 transition-all disabled:opacity-50 hover:bg-black/5 dark:hover:bg-white/5"
                   style={{ color: accentColor }}
                 >
-                  {isLoading
+                  {isSaving
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
                     : <Sparkles className="w-3.5 h-3.5 shrink-0" />}
-                  <span className="text-[9px] font-bold leading-none">{isLoading ? 'Saving' : 'Add Card'}</span>
+                  <span className="text-[9px] font-bold leading-none">{isSaving ? 'Saving' : 'Add Card'}</span>
                 </button>
 
                 <button
                   onClick={dismiss}
-                  className="px-3 py-2.5 flex items-center transition-colors"
+                  className="px-3 py-2.5 flex items-center transition-colors hover:bg-black/5 dark:hover:bg-white/5"
                   style={{ color: textMuted }}
                 >
                   <span className="text-xs">✕</span>

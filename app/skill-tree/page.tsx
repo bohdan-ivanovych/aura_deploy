@@ -26,6 +26,7 @@ type SkillNode = {
   correct: number;
   progressPct: number;
   recentlyIdentified: boolean;
+  keywords?: string[];
 };
 
 const CATEGORY_COLORS: Record<string, { dot: string; glow: string; badge: string }> = {
@@ -53,8 +54,9 @@ function SkillTreeContent() {
   const didFocusTopic = useRef(false);
 
   const [nodes, setNodes] = useState<SkillNode[]>([]);
-  const [userXp, setUserXp] = useState(0);
+  const [userDepth, setUserDepth] = useState(0);
   const [unlockedCount, setUnlockedCount] = useState(0);
+  const [msgsToNextAudit, setMsgsToNextAudit] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,8 +72,9 @@ function SkillTreeContent() {
       const data = await res.json();
       if (data.nodes) {
         setNodes(data.nodes);
-        setUserXp(data.userXp ?? 0);
+        setUserDepth(data.userDepth ?? 0);
         setUnlockedCount(data.unlockedCount ?? 0);
+        setMsgsToNextAudit(typeof data.msgsToNextAudit === 'number' ? data.msgsToNextAudit : null);
         if (!preserveExpanded) {
           const toExpand = new Set<string>();
           (data.nodes as SkillNode[]).forEach((n) => {
@@ -96,18 +99,44 @@ function SkillTreeContent() {
   useEffect(() => {
     if (focusedTopic && !didFocusTopic.current && nodes.length > 0) {
       didFocusTopic.current = true;
-      const node = nodes.find(n => n.title.toLowerCase().includes(focusedTopic.toLowerCase()) || n.slug === focusedTopic.toLowerCase());
+      const lc = focusedTopic.toLowerCase().trim();
+
+      // Pass 1 — exact slug match
+      let node = nodes.find(n => n.slug === lc || n.slug === lc.replace(/[^a-z0-9]+/g, '-'));
+
+      // Pass 2 — title substring match (case-insensitive)
+      if (!node) {
+        node = nodes.find(n =>
+          n.title.toLowerCase() === lc ||
+          n.title.toLowerCase().includes(lc) ||
+          lc.includes(n.title.toLowerCase())
+        );
+      }
+
+      // Pass 3 — keyword match within nodes array (reuses same logic as server-side)
+      if (!node) {
+        node = nodes.find(n =>
+          n.keywords?.some(k =>
+            lc.includes(k.toLowerCase()) || k.toLowerCase().includes(lc)
+          )
+        );
+      }
+
       if (node) {
         setSelectedId(node.id);
-        setExpandedCategories(prev => new Set([...prev, node.category]));
+        setExpandedCategories(prev => new Set([...prev, node!.category]));
       } else {
-        // Create synthetic node for unknown topics
-        const syntheticId = `synth-${focusedTopic}`;
+        // Custom / dynamic topic — create a synthetic node
+        const syntheticId = `synth-${lc}`;
+        const prettyTitle = focusedTopic
+          .split(/[-_\s]+/)
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ');
         setNodes(prev => [...prev, {
           id: syntheticId,
-          slug: focusedTopic.toLowerCase().replace(/\s+/g, '-'),
-          title: focusedTopic,
-          description: 'A dynamic area of grammar identified from your recent conversations.',
+          slug: lc.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+          title: prettyTitle,
+          description: `A grammar pattern identified in your recent conversations that needs practice.`,
           category: 'Emerging Skills',
           level: 1,
           xpReward: 30,
@@ -117,7 +146,7 @@ function SkillTreeContent() {
           practiced: 1,
           correct: 0,
           progressPct: 0,
-          recentlyIdentified: true
+          recentlyIdentified: true,
         }]);
         setSelectedId(syntheticId);
         setExpandedCategories(prev => new Set([...prev, 'Emerging Skills']));
@@ -218,9 +247,17 @@ function SkillTreeContent() {
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--accent-cyan)]/30 bg-[var(--accent-cyan)]/10">
               <Zap className="w-3 h-3 text-[var(--accent-cyan)]" />
               <span className="text-[10px] font-black uppercase tracking-widest text-[var(--accent-cyan)]">
-                {userXp} XP
+                {userDepth}m
               </span>
             </div>
+            {msgsToNextAudit !== null && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/10 bg-white/5"
+                title="Skills update every 10 messages">
+                <span className="text-[10px] font-black uppercase tracking-widest text-white/40">
+                  +{msgsToNextAudit} msg{msgsToNextAudit !== 1 ? 's' : ''} to next update
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -306,7 +343,7 @@ function SkillTreeContent() {
                       Level {selectedNode.level}
                     </span>
                     <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-[var(--accent-cyan)]/30 bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)]">
-                      {selectedNode.xpReward} XP
+                      {selectedNode.xpReward}m depth
                     </span>
                   </div>
 
@@ -568,7 +605,7 @@ function SkillTreeContent() {
                                           Lv.{node.level}
                                         </span>
                                         <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-[var(--accent-cyan)]/12 text-[var(--accent-cyan)] border border-[var(--accent-cyan)]/25">
-                                          {node.xpReward} XP
+                                          +{node.xpReward}m
                                         </span>
                                         {node.recentlyIdentified && (
                                           <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-[var(--accent-fuchsia)]/15 text-[var(--accent-fuchsia)] border border-[var(--accent-fuchsia)]/30">

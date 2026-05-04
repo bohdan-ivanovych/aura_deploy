@@ -17,6 +17,19 @@ export async function GET() {
       take: 10,
     });
 
+    // Scrub invalid entries where LLM returned "None" / "null" as a string — delete them quietly
+    const INVALID_RULES = ['none', 'null', 'undefined', 'n/a'];
+    const invalidIds = weaknesses
+      .filter(w => INVALID_RULES.includes(w.rule.trim().toLowerCase()))
+      .map(w => w.id);
+    if (invalidIds.length > 0) {
+      prisma.grammarWeakness.deleteMany({ where: { id: { in: invalidIds } } })
+        .catch(() => { /* fire-and-forget */ });
+    }
+    const validWeaknesses = weaknesses.filter(
+      w => !INVALID_RULES.includes(w.rule.trim().toLowerCase()),
+    );
+
     const strengths = await prisma.grammarWeakness.findMany({
       where: {
         userId: user.id,
@@ -27,7 +40,7 @@ export async function GET() {
     });
 
     return NextResponse.json({
-      weaknesses: weaknesses.map(w => ({
+      weaknesses: validWeaknesses.map(w => ({
         rule: w.rule,
         count: w.count,
         lastSeen: w.lastSeen,

@@ -34,7 +34,7 @@ const SkillNode = React.memo(({ title, progress, level, unlocked, category, slug
 
   const handleNodeClick = useCallback(() => {
     if (unlocked) {
-      router.push(`/skill-tree/${slug}`);
+      router.push(`/skill-tree?topic=${slug}`);
     } else {
       router.push('/skill-tree');
     }

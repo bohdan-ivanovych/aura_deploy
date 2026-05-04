@@ -53,6 +53,7 @@ export async function POST(
       `Do NOT ask for their name, age, or language ability. Do NOT introduce yourself by saying "Hi, I'm ...".`,
       `Just speak naturally — start the conversation YOUR way, based on your personality.`,
       `Return ONLY valid JSON: {"bubbles": ["your opening message"]}`,
+      `[SYSTEM]: You must output ONLY a valid JSON object matching the required schema. Start your response with {`
     ].filter(Boolean).join('\n');
 
     const rawContent = await makeAICompletion({
@@ -103,7 +104,7 @@ export async function POST(
         createdAt: aiMsg.createdAt,
         grammarCorrection: null,
         weaknessIdentified: null,
-        bonusXP: false,
+        xpReward: 0,
       },
     });
   } catch (error) {

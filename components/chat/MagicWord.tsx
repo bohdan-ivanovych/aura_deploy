@@ -189,7 +189,7 @@ export function MagicWord({ word, contextSentence = '' }: MagicWordProps) {
         sideOffset={12}
         avoidCollisions
         collisionPadding={12}
-        className="w-72 sm:w-80 backdrop-blur-3xl shadow-[0_30px_100px_rgba(0,0,0,0.6)] rounded-3xl p-5 overflow-hidden ring-1"
+        className="w-72 sm:w-80 backdrop-blur-3xl shadow-[0_30px_100px_rgba(0,0,0,0.6)] rounded-3xl p-5 overflow-hidden ring-1 z-[9999]"
         style={{
           background: popupBg,
           border: `1px solid ${isDark ? 'var(--border)' : 'rgba(0,0,0,0.08)'}`,
@@ -249,7 +249,7 @@ export function MagicWord({ word, contextSentence = '' }: MagicWordProps) {
           {showExplanation && (
             <div className="space-y-1.5">
               <p className="text-[9px] uppercase tracking-[0.22em] font-bold" style={{ color: mutedColor }}>
-                Usage in context
+                Usage
               </p>
               <div className="min-h-[48px]">
                 {loading ? (

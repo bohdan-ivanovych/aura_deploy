@@ -54,7 +54,6 @@ export async function getCurrentUser(refCode?: string) {
         magicWord: 'explain',
         targetAccent: 'us',
         xp: 0,
-        currentHP: 100,
         diveDepth: 0,
         maxDiveDepth: 0,
         streak: 0,
@@ -77,7 +76,7 @@ export async function getCurrentUser(refCode?: string) {
           }),
           prisma.user.update({
             where: { id: referrer.id },
-            data: { referralCount: { increment: 1 }, xp: { increment: 100 } } as any
+            data: { referralCount: { increment: 1 }, diveDepth: { increment: 100 } } as any
           })
         ]);
         user = { ...user, referredBy: refCode } as any;

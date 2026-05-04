@@ -445,20 +445,7 @@ export function useReelGenerator({ messages, persona, diveDepth }: Props) {
 
       setGenStage('audio');
       const ttsPromises = messages.map(async (msg) => {
-        if (msg.sender === 'AI') {
-          try {
-            const res = await fetch('/api/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: msg.text, voiceId: persona.voiceId }),
-            });
-            if (res.ok) {
-              const ab = await res.arrayBuffer();
-              return await audioCtx.decodeAudioData(ab);
-            }
-          } catch {}
-        }
-        return null;
+        return null as AudioBuffer | null; // Microsoft TTS removed
       });
 
       const ttsBuffers = await Promise.all(ttsPromises);
@@ -540,15 +527,26 @@ export function useReelGenerator({ messages, persona, diveDepth }: Props) {
           }
         } else if (msg.sender === 'AI') {
           const buf = ttsBuffers[msgIdx];
-          if (msg.wordsShown === 0 && buf) {
-            const src = audioCtx.createBufferSource();
-            src.buffer = buf;
-            src.connect(audioDest);
-            src.connect(audioCtx.destination);
-            src.start();
+          if (msg.wordsShown === 0) {
             const wordCount = msg.words.length;
-            const dur = buf.duration;
-            const wps = wordCount / dur;
+            let wps = 3; // Default words per second fallback
+            
+            if (buf) {
+              const src = audioCtx.createBufferSource();
+              src.buffer = buf;
+              src.connect(audioDest);
+              src.connect(audioCtx.destination);
+              src.start();
+              wps = wordCount / buf.duration;
+            } else {
+              // Web Speech API fallback for actual playback, but not recorded in reel audio track
+              if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(msg.text);
+                utterance.rate = 1.1;
+                window.speechSynthesis.speak(utterance);
+              }
+            }
+            
             const revealInterval = setInterval(() => {
               if (msg.wordsShown < wordCount) {
                 msg.wordsShown = Math.min(msg.wordsShown + 1, wordCount);

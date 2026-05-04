@@ -10,7 +10,7 @@ const MESSAGE_SELECT = {
   senderPersonaId: true,
   grammarCorrection: true,
   weaknessIdentified: true,
-  bonusXP: true,
+  xpReward: true,
   createdAt: true,
   edited: true,
   originalText: true,

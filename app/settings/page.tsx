@@ -7,7 +7,7 @@ import { ChevronDown, Sun, Moon, Globe, MapPin } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/theme-context';
 
 type CardPreference = 'translation' | 'explanation' | 'both';
-type ExplanationLanguage = 'native' | 'english';
+
 type TargetAccent = 'us' | 'gb';
 
 const ALL_LANGUAGES = [
@@ -164,7 +164,7 @@ export default function SettingsPage() {
   const [usernameError, setUsernameError] = useState('');
   const [nativeLanguage, setNativeLanguage] = useState('');
   const [cardPreference, setCardPreference] = useState<CardPreference>('both');
-  const [explanationLanguage, setExplanationLanguage] = useState<ExplanationLanguage>('native');
+
   const [targetAccent, setTargetAccent] = useState<TargetAccent>('us');
   const [referralCode, setReferralCode] = useState('');
   const [stealthInjectVocab, setStealthInjectVocab] = useState(false);
@@ -228,7 +228,7 @@ export default function SettingsPage() {
           setUsername(data.user.username || '');
           setNativeLanguage(data.user.nativeLanguage || '');
           setCardPreference((data.user.cardPreference as CardPreference) || 'both');
-          setExplanationLanguage((data.user.explanationLanguage as ExplanationLanguage) || 'native');
+
           setTargetAccent((data.user.targetAccent as TargetAccent) || 'us');
           setReferralCode(data.user.referralCode || '');
           setStealthInjectVocab(data.user.stealthInjectVocab ?? false);
@@ -271,7 +271,7 @@ export default function SettingsPage() {
             const res = await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nativeLanguage, cardPreference, explanationLanguage, targetAccent, name: displayName, username, email, stealthInjectVocab, stealthInjectGrammar }),
+            body: JSON.stringify({ nativeLanguage, cardPreference, targetAccent, name: displayName, username, email, stealthInjectVocab, stealthInjectGrammar }),
           });
           const data = await res.json();
           if (res.status === 409) {
@@ -286,7 +286,7 @@ export default function SettingsPage() {
       }, 600);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nativeLanguage, cardPreference, explanationLanguage, targetAccent, displayName, username, email, stealthInjectVocab, stealthInjectGrammar, loading]);
+  }, [nativeLanguage, cardPreference, targetAccent, displayName, username, email, stealthInjectVocab, stealthInjectGrammar, loading]);
 
   useEffect(() => () => { if (debouncedSave.current) clearTimeout(debouncedSave.current); }, []);
 
@@ -581,25 +581,7 @@ export default function SettingsPage() {
                 />
               </SettingRow>
 
-              {/* Explanation language */}
-              <div className="px-5 py-4" style={{ borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.055)' : 'rgba(0,0,0,0.055)'}` }}>
-                <div className="flex items-center justify-between gap-4 mb-3">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: headingColor }}>Explanation language</p>
-                    <p className="text-xs mt-0.5" style={{ color: subColor }}>Language for grammar corrections.</p>
-                  </div>
-                </div>
-                <GridOptions
-                  value={explanationLanguage}
-                  onChange={setExplanationLanguage}
-                  isDark={isDark}
-                  cols={2}
-                  options={[
-                    { id: 'native' as ExplanationLanguage, label: 'Native language' },
-                    { id: 'english' as ExplanationLanguage, label: 'English only' },
-                  ]}
-                />
-              </div>
+
 
               {/* Flashcard back */}
               <div className="px-5 py-4">
@@ -616,7 +598,7 @@ export default function SettingsPage() {
                   cols={3}
                   options={[
                     { id: 'translation' as CardPreference, label: 'Translation' },
-                    { id: 'explanation' as CardPreference, label: 'Explanation' },
+                    { id: 'explanation' as CardPreference, label: 'Usage' },
                     { id: 'both' as CardPreference, label: 'Both' },
                   ]}
                 />

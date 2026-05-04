@@ -21,7 +21,11 @@ export function ErrorHighlightedText({
     return () => clearTimeout(timer);
   }, [tooltipVisible, onReadTimeout]);
 
-  const idx = text.indexOf(errorSpan.original);
+  let idx = text.indexOf(errorSpan.original);
+  if (idx === -1) {
+    idx = text.toLowerCase().indexOf(errorSpan.original.toLowerCase());
+  }
+
   if (idx === -1) {
     return (
       <p className="text-[14px] leading-[1.65] font-medium text-[var(--foreground)] tracking-[0.005em] after:content-[''] after:inline-block after:w-[46px] after:h-2">
@@ -85,7 +89,7 @@ export function ErrorHighlightedText({
   );
 }
 
-export function FloatingXPBadge({ value, color }: { value: number; color: 'green' | 'red' }) {
+export function FloatingMetersBadge({ value }: { value: number }) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -94,6 +98,14 @@ export function FloatingXPBadge({ value, color }: { value: number; color: 'green
   }, []);
 
   if (!visible) return null;
+
+  const colorConfig = {
+    0: { hex: '#f87171', rgb: '248,113,113' },
+    1: { hex: '#60a5fa', rgb: '96,165,250' },
+    2: { hex: '#4ade80', rgb: '74,222,128' },
+  };
+  
+  const conf = colorConfig[value as 0 | 1 | 2] || colorConfig[1];
 
   return (
     <AnimatePresence>
@@ -104,16 +116,14 @@ export function FloatingXPBadge({ value, color }: { value: number; color: 'green
         className="absolute pointer-events-none select-none z-50 font-black italic"
         style={{
           top: '-4px',
-          right: color === 'green' ? '-4px' : '12px',
+          right: '-4px',
           fontSize: '14px',
           letterSpacing: '-0.03em',
-          color: color === 'green' ? '#4ade80' : '#f87171',
-          textShadow: color === 'green'
-            ? '0 0 8px rgba(74,222,128,0.9), 0 0 20px rgba(74,222,128,0.5), 0 0 40px rgba(74,222,128,0.25)'
-            : '0 0 8px rgba(248,113,113,0.9), 0 0 20px rgba(248,113,113,0.5), 0 0 40px rgba(248,113,113,0.25)',
+          color: conf.hex,
+          textShadow: `0 0 8px rgba(${conf.rgb},0.9), 0 0 20px rgba(${conf.rgb},0.5), 0 0 40px rgba(${conf.rgb},0.25)`,
         }}
       >
-        {value > 0 ? `+${value}` : value} XP
+        {value > 0 ? `+${value}` : value}m
       </motion.div>
     </AnimatePresence>
   );

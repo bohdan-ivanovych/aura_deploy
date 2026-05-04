@@ -51,9 +51,9 @@ Constraints for the quests:
     console.error('Failed to generate personalized quests:', err);
     // Fallback static quests if generation fails
     return [
-      { title: 'Sentence Survivor', description: 'Survive 3 messages without any HP damage', xp: 40 },
+      { title: 'Sentence Survivor', description: 'Send 3 messages without grammar errors', xp: 40 },
       { title: 'The Architect', description: 'Write a complex sentence with a subordinate clause', xp: 35 },
-      { title: 'Vocab Flex', description: 'Score exactly 80+ on vocabulary in a single message', xp: 50 },
+      { title: 'Vocab Flex', description: 'Score 80+ on vocabulary in a single message', xp: 50 },
       { title: 'Tense Transformer', description: 'Use a conditional sentence (if/would) perfectly', xp: 45 },
       { title: 'Deep Diver', description: 'Send 5 messages in a single session', xp: 30 }
     ];

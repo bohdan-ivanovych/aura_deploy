@@ -62,7 +62,7 @@ export default function StatsPage() {
       g.keywords.some((k: string) => k.toLowerCase() === node.label.toLowerCase())
     );
     if (match) {
-      router.push(`/skill-tree/${match.slug}`);
+      router.push(`/skill-tree?topic=${match.slug}`);
     } else {
       router.push(`/skill-tree?topic=${encodeURIComponent(node.label)}`);
     }

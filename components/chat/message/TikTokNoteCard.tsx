@@ -5,8 +5,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Copy, ChevronDown, ChevronUp } from 'lucide-react';
 import { haptics } from '@/lib/utils/haptics';
 import ClickableWordText from '@/components/chat/ClickableWordText';
+import type { ShortVideoPlatform } from '@/lib/ai/video-processor';
 
 export interface TikTokNoteData {
+  platform?: ShortVideoPlatform;
   videoTitle: string;
   authorName: string;
   thumbnailUrl: string | null;
@@ -21,15 +23,22 @@ interface TikTokNoteCardProps {
   data: TikTokNoteData;
 }
 
-// Rose/pink accent — distinct from grammar (amber) and vocab (purple)
-const ACCENT_HEX = '#f43f5e';
-const ACCENT_RGB = '244,63,94';
+// Per-platform accent colors
+const PLATFORM_CONFIG: Record<string, { hex: string; rgb: string; label: string; emoji: string }> = {
+  tiktok: { hex: '#0891b2', rgb: '8,145,178',   label: 'TikTok Note',  emoji: '🎵' },
+  shorts: { hex: '#dc2626', rgb: '220,38,38',    label: 'Shorts Note',  emoji: '▶️' },
+  reels:  { hex: '#9333ea', rgb: '147,51,234',   label: 'Reels Note',   emoji: '📱' },
+};
 
 export function TikTokNoteCard({ data }: TikTokNoteCardProps) {
   const [expanded, setExpanded] = useState(true);
 
+  const cfg = PLATFORM_CONFIG[data.platform ?? 'tiktok'] ?? PLATFORM_CONFIG.tiktok;
+  const ACCENT_HEX = cfg.hex;
+  const ACCENT_RGB = cfg.rgb;
+  const platformLabel = cfg.label;
+  const platformEmoji = cfg.emoji;
   const typeLabel = data.noteType === 'cross_language' ? 'Cross-Language' : 'English Phrase';
-  const typeEmoji = data.noteType === 'cross_language' ? '🌐' : '🎵';
 
   return (
     <motion.div
@@ -43,6 +52,7 @@ export function TikTokNoteCard({ data }: TikTokNoteCardProps) {
       }}
     >
     {/* Header — use div + role to avoid nested <button> hydration error */}
+
       <div
         role="button"
         tabIndex={0}
@@ -52,6 +62,7 @@ export function TikTokNoteCard({ data }: TikTokNoteCardProps) {
         style={{
           background: `rgba(${ACCENT_RGB}, 0.09)`,
           borderBottom: expanded ? `1px solid rgba(${ACCENT_RGB}, 0.13)` : 'none',
+          backdropFilter: 'blur(10px)',
         }}
       >
         <div className="flex items-center gap-2">
@@ -59,13 +70,12 @@ export function TikTokNoteCard({ data }: TikTokNoteCardProps) {
             className="w-1.5 h-1.5 rounded-full"
             style={{ background: ACCENT_HEX, boxShadow: `0 0 8px ${ACCENT_HEX}` }}
           />
-          {/* TikTok music note icon */}
-          <span className="text-[10px]">{typeEmoji}</span>
+          <span className="text-[10px]">{platformEmoji}</span>
           <span
             className="text-[9px] font-black uppercase tracking-[0.15em]"
             style={{ color: ACCENT_HEX }}
           >
-            TikTok Note · {typeLabel}
+            {platformLabel} · {typeLabel}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -7,12 +7,12 @@ import { checkMessageLimit, incrementMessageCount } from '@/lib/auth/subscriptio
 // Sliding window: last N messages (includes hidden call transcripts for context)
 import { CHAT_MAX_CONTEXT_MESSAGES as MAX_CONTEXT_MESSAGES, CHAT_MAX_COMPLETION_TOKENS as MAX_COMPLETION_TOKENS } from '@/src/config/gameplayConfig';
 
-import { resolveHP } from '@/lib/game/hp-engine';
 import { calculateDepth, calculateStreak } from '@/lib/game/mechanics';
 import { checkQuestCompletion, QuestCheckParams, generateBonusQuest } from '@/lib/game/quests';
 import { calculateCEFRLevel, calculateRollingAverage, clampScore } from '@/lib/services/user-stats';
-import { generateChatResponse } from '@/lib/ai/groq-chat';
-import { processTikTokMultimodal, FullTikTokContext } from '@/lib/ai/tiktok-processor';
+import { generateChatResponse } from '@/lib/ai/chat-engine';
+import { processShortVideo, ShortVideoContext, ShortVideoPlatform } from '@/lib/ai/video-processor';
+import { logDev } from '@/lib/utils/logger';
 
 
 function sseEvent(event: string, data: object | string): string {
@@ -27,6 +27,8 @@ export async function sendMessageStream(
   personaId?: string | null,
   lastReaction?: string | null,
   isTikTok?: boolean,
+  isShortVideo?: boolean, // alias — set when any short-form video URL is detected
+
 ): Promise<ReadableStream<Uint8Array>> {
   if (!text?.trim()) throw new Error('Missing text');
   if (!userId) throw new Error('ANONYMOUS_ID_MISSING');
@@ -41,7 +43,7 @@ export async function sendMessageStream(
 
       try {
 
-        const [userRecord, recentWeaknesses] = await Promise.all([
+        const [userRecord, recentWeaknesses, activeQuests] = await Promise.all([
           prisma.user.findUnique({ where: { id: userId! } })
             .then(u => u ?? prisma.user.create({
               data: { id: userId!, email: `anon_${userId}@aura.local`, name: 'Anonymous' },
@@ -50,6 +52,11 @@ export async function sendMessageStream(
             where: { userId: userId! },
             orderBy: { lastSeen: 'desc' },
             take: 10,
+          }),
+          prisma.userQuest.findMany({
+            where: { userId: userId!, completed: false },
+            include: { quest: true },
+            take: 5,
           }),
         ]);
 
@@ -205,14 +212,38 @@ export async function sendMessageStream(
         });
         const prevStealthTarget = lastAIAttempt?.stealthTarget;
 
-        // ── TikTok 2.0: Multimodal Context Fetching (Whisper + Vision) ───────────
-        // This allows the persona to react to the exact AUDIO or VISION content.
-        let tiktokContext: FullTikTokContext | null = null;
-        if (isTikTok) {
-          // Extract just the TikTok URL from the message text (user may have written text around it)
-          const urlMatch = text.match(/https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i);
-          const cleanUrl = urlMatch ? urlMatch[0].split('?')[0] : text.trim().split('?')[0];
-          tiktokContext = await processTikTokMultimodal(cleanUrl, null);
+        // ── Short-Video 2.0: Unified Multimodal Context Fetching ──────────────────
+        // Detects TikTok, YouTube Shorts, and Instagram Reels URLs in the message.
+        let shortVideoContext: ShortVideoContext | null = null;
+        const _isShortVideo = !!isTikTok || !!isShortVideo;
+
+        if (_isShortVideo) {
+          // Detect which platform from the URL
+          const shortsMatch = text.match(
+            /https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)\S*/i,
+          );
+          const reelsMatch = text.match(
+            /https?:\/\/(?:www\.)?instagram\.com\/(?:reels?|p)\/[\w-]+\/?/i,
+          );
+          const tiktokMatch = text.match(
+            /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i,
+          );
+
+          let platform: ShortVideoPlatform = 'tiktok';
+          let videoUrl = text.trim().split('?')[0];
+
+          if (shortsMatch) {
+            platform = 'shorts';
+            videoUrl = shortsMatch[0].split('?')[0];
+          } else if (reelsMatch) {
+            platform = 'reels';
+            videoUrl = reelsMatch[0].split('?')[0];
+          } else if (tiktokMatch) {
+            platform = 'tiktok';
+            videoUrl = tiktokMatch[0].split('?')[0];
+          }
+
+          shortVideoContext = await processShortVideo(platform, videoUrl, null);
         }
 
         const { bubbles, parsedMeta } = await generateChatResponse({
@@ -227,16 +258,21 @@ export async function sendMessageStream(
           reactionInject,
           weaknessSummary,
           memoryContext: stealthDirective,
-          isTikTok: !!isTikTok,
-          tiktokContext, // Passes the full multimodal object
+          activeQuests: activeQuests.map(uq => ({ id: uq.quest.id, title: uq.quest.title, description: uq.quest.description, progress: uq.progress || 0 })),
+          isShortVideo: _isShortVideo,
+          shortVideoContext,
           stealthTargets: { prevStealthTarget }
         });
+
+        logDev('Actions:Chat', 'Generated response:', { bubbles, parsedMeta });
 
         // Extract metadata from last bubble parse
         const {
           grammarCorrection = null,
-          weaknessIdentified = null,
+          weaknessIdentified: rawWeakness = null,
           strengthIdentified = null,
+          vocabularyNote = null,
+          vibeNote = null,
           suggestion = null,
           errorSpan = null,
           levelAdjustment: rawAdj = 0,
@@ -245,7 +281,19 @@ export async function sendMessageStream(
           fluencyScore: rawFluency,
           grammarScore: rawGrammar,
           accuracyScore: rawAccuracy,
+          completedQuestIds = [],
         } = parsedMeta;
+
+        // Ensure completedQuestIds is an array
+        if (parsedMeta.completedQuestIds && !Array.isArray(parsedMeta.completedQuestIds)) {
+          parsedMeta.completedQuestIds = [];
+        }
+
+        // Guard against LLMs returning the literal string "None" instead of JSON null
+        const weaknessIdentified =
+          rawWeakness && String(rawWeakness).trim().toLowerCase() !== 'none'
+            ? rawWeakness
+            : null;
 
         const levelAdjustment = Math.max(-2, Math.min(2, Math.round(Number(rawAdj) || 0)));
 
@@ -255,22 +303,18 @@ export async function sendMessageStream(
         const grammarScore = clampScore(rawGrammar);
         const accuracyScore = clampScore(rawAccuracy);
 
-        // HP calculation — unified through hp-engine.ts
-        const currentHP = userRecord.currentHP ?? 100;
-        const currentDiveDepth = userRecord.diveDepth ?? 0;
-        const hpEvent = weaknessIdentified ? 'chat_major_error' : 'chat_clean';
-        const { newHP, delta: hpDelta } = resolveHP(hpEvent, currentHP, currentDiveDepth);
-
         // Depth calculation
         const now = new Date();
         const withoutEmoji = text.replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, '').trim();
         const realWords = withoutEmoji.split(/\s+/).filter(w => /[a-zA-Z\u0400-\u04FF]/.test(w));
         const isMeaningful = realWords.length >= 2;
-        // Skip grammar for TikTok URLs or emoji-only messages
-        const skipGrammar = realWords.length === 0 || !!isTikTok;
+        // Skip grammar ONLY when the message has no real words (pure URL / emoji).
+        // If the user also wrote text (e.g. "just watchs this bro https://...") we
+        // still want to evaluate and highlight their grammar errors.
+        const skipGrammar = realWords.length === 0;
 
         const { finalDepth, depthDelta } = calculateDepth(
-          currentDiveDepth,
+          userRecord.diveDepth ?? 0,
           userRecord.lastActiveAt ? new Date(userRecord.lastActiveAt) : null,
           now,
           isMeaningful,
@@ -325,8 +369,17 @@ export async function sendMessageStream(
           });
         }
 
-        // Emit errorSpan update for user message
-        enqueue(sseEvent('user_update', { userMsgId: userMsg.id, errorSpan: validErrorSpan }));
+        // Calculate xpReward so it can be sent to both User and AI messages
+        const finalXPReward = weaknessIdentified ? 0 : (
+          ((vocabScore && vocabScore >= 75) || (complexityScore && complexityScore >= 75) || strengthIdentified) ? 2 : 1
+        );
+
+        // Emit errorSpan and xpReward update for user message
+        enqueue(sseEvent('user_update', { 
+          userMsgId: userMsg.id, 
+          errorSpan: validErrorSpan,
+          xpReward: finalXPReward
+        }));
 
         // Save each bubble as a separate Message, emit with stagger
         const savedBubbles: Array<{ id: string; text: string }> = [];
@@ -356,7 +409,9 @@ export async function sendMessageStream(
               replyToId: shouldReply ? userMsg.id : null,
               grammarCorrection: isLastBubble && !skipGrammar && grammarCorrection ? String(grammarCorrection) : null,
               weaknessIdentified: isLastBubble && !skipGrammar && weaknessIdentified ? String(weaknessIdentified) : null,
-              bonusXP: isLastBubble ? !weaknessIdentified : false,
+              vocabularyNote: isLastBubble && !skipGrammar && vocabularyNote ? String(vocabularyNote) : null,
+              vibeNote: isLastBubble && vibeNote ? String(vibeNote) : null,
+              xpReward: isLastBubble ? finalXPReward : 0,
               stealthTarget: isLastBubble && stealthGrammarTargetSlug ? stealthGrammarTargetSlug : null,
             },
           });
@@ -373,7 +428,9 @@ export async function sendMessageStream(
             senderAvatar: persona.avatarUrl,
             grammarCorrection: isLastBubble && !skipGrammar ? (grammarCorrection ?? null) : null,
             weaknessIdentified: isLastBubble && !skipGrammar ? (weaknessIdentified ?? null) : null,
-            bonusXP: isLastBubble ? !weaknessIdentified : false,
+            vocabularyNote: isLastBubble && !skipGrammar ? (vocabularyNote ?? null) : null,
+            vibeNote: isLastBubble ? (vibeNote ?? null) : null,
+            xpReward: isLastBubble ? finalXPReward : 0,
             suggestion: isLastBubble ? (suggestion ?? null) : null,
             errorSpan: isLastBubble ? validErrorSpan : null,
             replyTo: shouldReply ? { id: userMsg.id, text: userMsg.text, sender: 'USER' } : null,
@@ -388,7 +445,6 @@ export async function sendMessageStream(
           prisma.user.update({
             where: { id: userRecord.id },
             data: {
-              currentHP: newHP,
               diveDepth: finalDepth,
               maxDiveDepth: finalDepth > (userRecord.maxDiveDepth ?? 0) ? finalDepth : undefined,
               personalBestDepth: newPersonalBestDepth,
@@ -477,16 +533,59 @@ export async function sendMessageStream(
           );
         }
 
-        // XP awards — base 1 per message, +2 bonus for clean, +50 for streak milestone.
-        // Fire-and-forget so XP never blocks the stream.
-        const xpGain = 1 + (weaknessIdentified ? 0 : 2);
+        // Depth awards — base 1 per message, +2 bonus for clean, +50 for streak milestone.
+        // Fire-and-forget so depth never blocks the stream.
+        const depthGain = 1 + (weaknessIdentified ? 0 : 2);
         const streakMilestone = [3, 7, 14, 30, 60, 100].includes(currentStreak) && newLastStreakAt;
         prisma.user.update({
           where: { id: userRecord.id },
-          data: { xp: { increment: streakMilestone ? xpGain + 50 : xpGain } },
-        }).catch(err => console.error('[chat] XP update failed:', err));
+          data: { diveDepth: { increment: streakMilestone ? depthGain + 50 : depthGain } },
+        }).catch(err => console.error('[chat] Depth update failed:', err));
 
-        // Quest check
+        // Process LLM-returned quest completions
+        let questCompletions: Array<{ title: string; depthReward: number }> = [];
+        if (completedQuestIds && Array.isArray(completedQuestIds) && completedQuestIds.length > 0) {
+          for (const questId of completedQuestIds) {
+            const activeUq = activeQuests.find(uq => uq.quest.id === questId);
+            if (activeUq && !activeUq.completed) {
+              const depthReward = Math.max(1, Math.ceil(activeUq.quest.xp / 10));
+              await prisma.userQuest.update({
+                where: { id: activeUq.id },
+                data: { completed: true, completedAt: new Date() },
+              });
+              questCompletions.push({ title: activeUq.quest.title, depthReward });
+            }
+          }
+        }
+
+        // Server-side: Auto-increment progress for message-count quests
+        for (const uq of activeQuests) {
+          if (uq.completed) continue;
+          const desc = uq.quest.description.toLowerCase();
+          // Check if this is a message-count quest
+          if (desc.includes('send') && (desc.includes('message') || desc.includes('messages'))) {
+            const numMatch = uq.quest.description.match(/\b(\d+)\b/);
+            if (numMatch) {
+              const target = parseInt(numMatch[1], 10);
+              const newProgress = (uq.progress || 0) + 1;
+              if (newProgress >= target) {
+                const depthReward = Math.max(1, Math.ceil(uq.quest.xp / 10));
+                await prisma.userQuest.update({
+                  where: { id: uq.id },
+                  data: { completed: true, completedAt: new Date(), progress: target },
+                });
+                questCompletions.push({ title: uq.quest.title, depthReward });
+              } else {
+                await prisma.userQuest.update({
+                  where: { id: uq.id },
+                  data: { progress: newProgress },
+                });
+              }
+            }
+          }
+        }
+
+        // Quest check (server-side fallback for message-count quests)
         const recentAIMsgs = await prisma.message.findMany({
           where: { chatSessionId: session.id, sender: 'AI' },
           orderBy: { createdAt: 'desc' },
@@ -509,11 +608,19 @@ export async function sendMessageStream(
           complexityScore,
         });
 
-        const questFinalDepth = questCompleted
-          ? Math.min(200, finalDepth + questCompleted.depthReward)
+        // Combine LLM completions with server-side completions
+        const allQuestCompletions = [...questCompletions];
+        if (questCompleted) {
+          allQuestCompletions.push(questCompleted);
+        }
+
+        // Calculate total depth reward from all completions
+        const totalDepthReward = allQuestCompletions.reduce((sum, q) => sum + q.depthReward, 0);
+        const questFinalDepth = totalDepthReward > 0
+          ? Math.min(200, finalDepth + totalDepthReward)
           : finalDepth;
 
-        if (questCompleted) {
+        if (totalDepthReward > 0) {
           await prisma.user.update({
             where: { id: userRecord.id },
             data: { diveDepth: questFinalDepth },
@@ -524,9 +631,7 @@ export async function sendMessageStream(
         enqueue(sseEvent('stats', {
           depthDelta,
           currentDepth: questFinalDepth,
-          hpDelta,
-          currentHP: newHP,
-          questCompleted: questCompleted ?? null,
+          questCompleted: allQuestCompletions.length > 0 ? allQuestCompletions[0] : null,
           strengthIdentified: strengthIdentified ?? null,
           userLevel: userLevel ?? null,
           newPersonalBest: newPersonalBestDepth > (userRecord.personalBestDepth ?? 0),

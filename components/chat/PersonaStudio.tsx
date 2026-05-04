@@ -413,52 +413,51 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
   const SlotConfigPanel = slotPreset ? (
     <motion.div
       key="slot-panel"
-      initial={{ opacity: 0, x: 40 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 40 }}
+      initial={{ opacity: 0, y: 40, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 40, scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 360, damping: 32 }}
-      className="absolute inset-0 flex flex-col p-6 md:p-8 overflow-y-auto no-scrollbar"
-      style={{ background: isDark ? 'rgba(8,10,18,0.97)' : 'rgba(250,250,252,0.97)', zIndex: 10 }}
+      className="absolute inset-0 flex flex-col p-6 md:p-8 overflow-y-auto no-scrollbar liquid-glass-strong"
+      style={{ zIndex: 10 }}
     >
       {/* Back button */}
       <button
         type="button"
         aria-label="Back to browse"
-        onClick={() => setSlotPreset(null)}
-        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.2em] mb-6 w-fit"
-        style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}
+        onClick={() => {
+           if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(10);
+           setSlotPreset(null);
+        }}
+        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.2em] mb-6 w-fit text-[var(--foreground-muted)] hover:text-[var(--foreground)] transition-colors dopamine-button focus:outline-none"
       >
         <ArrowLeft className="w-3.5 h-3.5" />
         Back
       </button>
 
       {/* Persona header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-4 mb-6">
         <div
-          className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"
-          style={{
-            background: isDark ? 'rgba(34,211,238,0.1)' : 'rgba(8,145,178,0.08)',
-            border: `1px solid ${isDark ? 'rgba(34,211,238,0.2)' : 'rgba(8,145,178,0.16)'}`,
-          }}
+          className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shrink-0 neon-cyan"
+          style={{ background: 'var(--surface-hover)' }}
         >
           {slotPreset.emoji}
         </div>
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.25em]" style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>
-            {slotPreset.tag}
+          <p className="micro-copy mb-0.5 glow-cyan">
+            {slotPreset.tag} • Configuration
           </p>
-          <h3 className="text-base font-black tracking-tight uppercase" style={{ color: isDark ? '#ffffff' : '#1D1D1F' }}>
+          <h3 className="brutal-heading text-xl">
             {slotPreset.name}
           </h3>
         </div>
       </div>
 
-      <p className="text-[11px] leading-relaxed mb-6" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.45)' }}>
+      <p className="text-sm font-medium leading-relaxed mb-8 text-[var(--foreground-muted)] max-w-md">
         {slotPreset.description}
       </p>
 
       {/* Slot inputs */}
-      <div className="space-y-5 flex-1">
+      <div className="space-y-6 flex-1 max-w-md">
         {slotPreset.dynamicSlots?.map((slot: DynamicSlot) => (
           <div key={slot.key}>
             {slot.multi ? (
@@ -468,12 +467,15 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
                 options={slot.options}
                 placeholder={slot.placeholder}
                 value={(slotValues[slot.key] as string[]) ?? []}
-                onChange={(tags) => setSlotValues((prev) => ({ ...prev, [slot.key]: tags }))}
+                onChange={(tags) => {
+                  if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(10);
+                  setSlotValues((prev) => ({ ...prev, [slot.key]: tags }));
+                }}
                 isDark={isDark}
               />
             ) : (
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-[0.25em] mb-2" style={{ color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }}>
+                <label className="block text-[10px] font-semibold uppercase tracking-[0.25em] mb-2 text-[var(--foreground-muted)]">
                   {slot.label}
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -486,17 +488,20 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
                         whileTap={{ scale: 0.93 }}
                         transition={SPRING_OPTIONS}
                         aria-pressed={active}
-                        onClick={() => setSlotValues((prev) => ({ ...prev, [slot.key]: opt }))}
-                        className="px-3.5 py-2 rounded-full text-[11px] font-bold border transition-all"
+                        onClick={() => {
+                          if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(10);
+                          setSlotValues((prev) => ({ ...prev, [slot.key]: opt }));
+                        }}
+                        className="px-4 py-2.5 rounded-full text-[12px] font-black tracking-wide border transition-all"
                         style={active ? {
-                          background:  isDark ? 'rgba(34,211,238,0.18)' : 'rgba(8,145,178,0.12)',
-                          borderColor: isDark ? 'rgba(34,211,238,0.55)' : 'rgba(8,145,178,0.4)',
-                          color:       isDark ? '#22d3ee' : '#0891b2',
-                          boxShadow:   `0 0 10px ${isDark ? 'rgba(34,211,238,0.2)' : 'rgba(8,145,178,0.12)'}`,
+                          background:  'var(--accent-primary)',
+                          borderColor: 'var(--accent-primary)',
+                          color:       'var(--background)',
+                          boxShadow:   'var(--shadow-glow-cyan)'
                         } : {
                           background:  'var(--surface)',
                           borderColor: 'var(--border)',
-                          color:       'var(--foreground-muted)',
+                          color:       'var(--foreground)',
                         }}
                       >
                         {opt}
@@ -513,20 +518,15 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
       {/* Launch button */}
       <motion.button
         type="button"
-        whileTap={{ scale: 0.96 }}
-        whileHover={{ scale: 1.02 }}
-        transition={SPRING_OPTIONS}
         disabled={saving}
-        onClick={handleSlotLaunch}
-        className="w-full mt-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] flex items-center justify-center gap-2 disabled:opacity-50"
-        style={{
-          background: isDark ? 'linear-gradient(135deg, #22d3ee, #0098db)' : 'linear-gradient(135deg, #0891b2, #0064c8)',
-          color: '#fff',
-          boxShadow: isDark ? '0 14px 40px rgba(0,0,0,0.8)' : '0 6px 20px rgba(8,145,178,0.3)',
+        onClick={() => {
+          if (typeof window !== 'undefined' && window.navigator.vibrate) window.navigator.vibrate(20);
+          handleSlotLaunch();
         }}
+        className="dopamine-button w-full max-w-md mt-8 py-4 rounded-2xl text-[12px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 bg-[var(--foreground)] text-[var(--background)] shadow-[var(--shadow-glow-cyan)] disabled:opacity-50 focus:outline-none"
       >
-        <Zap className="w-3.5 h-3.5" />
-        {saving ? 'Launching…' : 'Launch Persona'}
+        <Zap className="w-4 h-4 fill-current opacity-80" />
+        {saving ? 'Initializing…' : 'Start Session'}
       </motion.button>
     </motion.div>
   ) : null;
@@ -901,17 +901,14 @@ function FeaturedCard({
       {/* CTA */}
       <div className="relative z-10 flex justify-end mt-4">
         <div
-          className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.25em] flex items-center gap-1"
+          className="px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-1.5 shadow-[var(--shadow-glow-cyan)] transition-colors dopamine-button disabled:opacity-50"
           style={{
-            background: isViral
-              ? isDark ? 'linear-gradient(135deg, #f472b6, #ec4899)' : 'linear-gradient(135deg, #db2777, #be185d)'
-              : isDark ? 'linear-gradient(135deg, #22d3ee, #0098db)' : 'linear-gradient(135deg, #0891b2, #0064c8)',
-            color: '#fff',
-            boxShadow: isDark ? '0 12px 30px rgba(0,0,0,0.8)' : '0 4px 16px rgba(8,145,178,0.3)',
+            background: 'var(--foreground)',
+            color: 'var(--background)'
           }}
         >
-          {preset.dynamicSlots?.length ? <ChevronRight className="w-3 h-3" /> : <Zap className="w-3 h-3" />}
-          {preset.dynamicSlots?.length ? 'Configure' : 'Launch'}
+          <Zap className="w-3.5 h-3.5 fill-current opacity-80" />
+          Initialize
         </div>
       </div>
     </motion.article>
@@ -1051,12 +1048,15 @@ function PersonaCard({
           <button
             type="button"
             aria-label={`Delete ${template.name}`}
-            onClick={() => onDelete(template.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(template.id);
+            }}
             disabled={isDeleting}
-            className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-40"
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-all disabled:opacity-40 dopamine-button"
             style={{
-              background: isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)',
-              border: `1px solid ${isDark ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.2)'}`,
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.3)',
             }}
           >
             {isDeleting
@@ -1066,15 +1066,14 @@ function PersonaCard({
           </button>
         )}
         <div
-          className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.25em] flex items-center gap-1 ml-auto"
+          className="px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-1.5 shadow-[var(--shadow-glow-cyan)] transition-colors dopamine-button disabled:opacity-50 ml-auto"
           style={{
-            background: isDark ? '#ffffff' : '#1D1D1F',
-            color: isDark ? '#000' : '#fff',
-            boxShadow: isDark ? '0 12px 30px rgba(0,0,0,0.8)' : '0 4px 12px rgba(0,0,0,0.18)',
+            background: 'var(--foreground)',
+            color: 'var(--background)'
           }}
         >
-          <Zap className="w-3 h-3" />
-          Start
+          <Zap className="w-3.5 h-3.5 fill-current opacity-80" />
+          Initialize
         </div>
       </div>
     </motion.article>

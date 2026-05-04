@@ -295,7 +295,9 @@ export function MessageList({
           senderType={msg.sender === 'USER' ? 'USER_A' : 'AI_PERSONA'}
           grammarCorrection={msg.grammarCorrection}
           weaknessIdentified={msg.weaknessIdentified}
-          bonusXP={msg.bonusXP}
+          vocabularyNote={msg.vocabularyNote}
+          vibeNote={msg.vibeNote}
+          xpReward={msg.xpReward}
           suggestion={msg.suggestion}
           errorSpan={msg.errorSpan}
           metrics={(msg as any).metrics}

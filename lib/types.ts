@@ -1,6 +1,5 @@
 export type UserStats = {
   xp: number;
-  currentHP: number;
   diveDepth: number;
   maxDiveDepth: number;
   streak: number;
@@ -30,7 +29,7 @@ export type ChatSession = {
     senderType: string;
     grammarCorrection: string | null;
     weaknessIdentified: string | null;
-    bonusXP: boolean;
+    xpReward: number;
     createdAt: Date;
   }[];
   blockedBy?: string | null;

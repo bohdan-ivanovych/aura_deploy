@@ -1,38 +1,10 @@
-import { getMaxHP, getHPRegen } from './levels';
 import {
-  HP_PENALTY_MAJOR,
-  HP_NOVICE_DEPTH_THRESHOLD,
-  HP_NOVICE_ERROR_FORGIVE_COUNT,
   MAX_DEPTH,
   DEPTH_PER_MEANINGFUL_MSG,
   DEPTH_DECAY_GRACE_DAYS,
   MAX_DEPTH_DECAY_PER_DAY,
   DEPTH_PER_LEVEL_ADJ,
 } from '@/src/config/gameplayConfig';
-
-export function calculateHP(
-  weaknessIdentified: string | null,
-  currentHP: number,
-  diveDepth: number,
-  sessionErrorCount: number
-): { hpDelta: number; newHP: number } {
-  const maxHP = getMaxHP(diveDepth);
-  const regen = getHPRegen(diveDepth);
-
-  let hpDelta: number;
-  if (weaknessIdentified) {
-    if (diveDepth < HP_NOVICE_DEPTH_THRESHOLD && sessionErrorCount <= HP_NOVICE_ERROR_FORGIVE_COUNT) {
-      hpDelta = 0;
-    } else {
-      hpDelta = -HP_PENALTY_MAJOR;
-    }
-  } else {
-    hpDelta = regen;
-  }
-
-  const newHP = Math.max(0, Math.min(maxHP, currentHP + hpDelta));
-  return { hpDelta, newHP };
-}
 
 export function calculateDepth(
   currentDiveDepth: number,

@@ -6,12 +6,12 @@ import { generateVideoNote, VideoNoteData } from '@/lib/ai/video-note';
 export type { VideoNoteData };
 
 /**
- * POST /api/tiktok-note
+ * POST /api/shorts-note
  *
- * Body: { url: string }  — a tiktok.com or vm.tiktok.com URL
+ * Body: { url: string }  — a youtube.com/shorts/... or youtu.be/... URL
  *
  * Returns a VideoNoteData card with the linguistically interesting
- * phrase extracted from the TikTok video content.
+ * phrase extracted from the YouTube Shorts video content.
  */
 export async function POST(req: Request) {
   try {
@@ -20,33 +20,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'URL is required' }, { status: 400 });
     }
 
-    // Normalize URL — extract the actual TikTok URL and strip query params
-    const urlMatch = url.match(/https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i);
+    // Normalize URL: extract the Shorts URL and strip query params
+    const urlMatch = url.match(
+      /https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)\S*/i,
+    );
     const cleanUrl = urlMatch ? urlMatch[0].split('?')[0] : url.trim().split('?')[0];
 
     const user = await getOrCreateUser();
 
-    // Attempt to grab oEmbed title/thumbnail as a fallback
+    // Attempt to grab a title via oEmbed (YouTube supports this)
     let fallbackTitle = '';
     let thumbnailUrl: string | null = null;
-    let authorName = '';
     try {
       const oembedRes = await fetch(
-        `https://www.tiktok.com/oembed?url=${encodeURIComponent(cleanUrl)}`,
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`,
         { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(3_000) },
       );
       if (oembedRes.ok) {
         const oembed = await oembedRes.json();
         fallbackTitle = oembed.title || '';
-        authorName = oembed.author_name || '';
         thumbnailUrl = oembed.thumbnail_url || null;
       }
     } catch { /* silent */ }
 
-    // Full multimodal extraction (TikWM + Whisper + Vision fallback)
-    const ctx = await processShortVideo('tiktok', cleanUrl, fallbackTitle);
-    // Prefer oembed author if processor didn't find one
-    if (!ctx.authorName && authorName) ctx.authorName = authorName;
+    // Full multimodal extraction (Whisper + Vision fallback)
+    // Pass oEmbed thumbnail so Vision can always analyze the cover image
+    const ctx = await processShortVideo('shorts', cleanUrl, fallbackTitle, thumbnailUrl);
     if (!ctx.thumbnailUrl && thumbnailUrl) ctx.thumbnailUrl = thumbnailUrl;
 
     // Generate the educational Note card
@@ -54,7 +53,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(note);
   } catch (error) {
-    console.error('tiktok-note error:', error);
-    return NextResponse.json({ error: 'Failed to generate TikTok note' }, { status: 500 });
+    console.error('shorts-note error:', error);
+    return NextResponse.json({ error: 'Failed to generate Shorts note' }, { status: 500 });
   }
 }

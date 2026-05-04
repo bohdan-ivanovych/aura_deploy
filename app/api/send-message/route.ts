@@ -53,13 +53,14 @@ export async function POST(req: Request) {
     // Last AI message reaction — for LLM injection
     const lastReaction = typeof body?.lastReaction === 'string' ? body.lastReaction : null;
     const isTikTok = body?.isTikTok === true;
+    const isShortVideo = body?.isShortVideo === true || isTikTok;
 
     if (!limit.isPro) {
       await incrementMessageCount(user.id);
     }
 
     // Return SSE stream
-    const stream = await sendMessageStream(chatSessionId, user.id, rawText, personaId, lastReaction, isTikTok);
+    const stream = await sendMessageStream(chatSessionId, user.id, rawText, personaId, lastReaction, isTikTok, isShortVideo);
 
     return new Response(stream, {
       headers: {

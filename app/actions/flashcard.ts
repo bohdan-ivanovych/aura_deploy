@@ -1,8 +1,6 @@
 "use server";
 
 import prisma from '@/lib/db/prisma';
-import { getMaxHP } from '@/lib/game/levels';
-import { resolveHP, computeHPDelta } from '@/lib/game/hp-engine';
 import { revalidatePath } from 'next/cache';
 import { fsrs, Rating, createEmptyCard, Card as FSRSCard } from 'ts-fsrs';
 
@@ -257,33 +255,10 @@ export async function binaryReviewFlashcard(id: string, isCorrect: boolean, user
   });
 
   if (isCorrect) {
-    const owner = await prisma.user.findUnique({
+    await prisma.user.update({
       where: { id: card.userId },
-      select: { currentHP: true, diveDepth: true, xp: true },
+      data: { xp: { increment: 3 } },
     });
-    if (owner) {
-      const { newHP } = resolveHP('flashcard_correct', owner.currentHP ?? 100, owner.diveDepth ?? 0);
-      await prisma.user.update({
-        where: { id: card.userId },
-        // Award 3 XP per correct flashcard, capped per day in UI layer
-        data: { currentHP: newHP, xp: { increment: 3 } },
-      });
-    }
-  } else {
-    // Wrong answer: apply minor HP penalty only
-    const owner = await prisma.user.findUnique({
-      where: { id: card.userId },
-      select: { currentHP: true, diveDepth: true },
-    });
-    if (owner) {
-      const delta = computeHPDelta('flashcard_wrong', owner.diveDepth ?? 0);
-      const maxHP = getMaxHP(owner.diveDepth ?? 0);
-      const newHP = Math.max(0, Math.min(maxHP, (owner.currentHP ?? 100) + delta));
-      await prisma.user.update({
-        where: { id: card.userId },
-        data: { currentHP: newHP },
-      });
-    }
   }
 
   return updatedCard;
