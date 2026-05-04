@@ -74,6 +74,7 @@ const POPUP_W = 380;
 const POPUP_H_EST = 215; // rough height estimate for placement math
 const GAP = 10;  // gap between bubble edge and popup
 const MARGIN = 12;  // min distance from viewport edge
+const BOTTOM_RESERVE = 120; // reserve space for ChatInput on desktop
 
 export default function ClickableWordText({
   text, voiceId, fullMessageText, magicHintWordIndices,
@@ -221,36 +222,35 @@ export default function ClickableWordText({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
+    const isDesktop = vw >= 768;
+    const bottomLimit = isDesktop ? vh - BOTTOM_RESERVE : vh;
+
     const spaceRight = vw - bubbleRect.right - MARGIN;
     const spaceLeft = bubbleRect.left - MARGIN;
-    const spaceBelow = vh - bubbleRect.bottom - MARGIN;
+    const spaceBelow = bottomLimit - bubbleRect.bottom - MARGIN;
     const spaceAbove = wordRect.top - MARGIN;
 
     let placement: PopupPlacement;
     let top = 0, left = 0;
 
     if (spaceRight >= POPUP_W + GAP) {
-      // ── Right of bubble (AI messages, plenty of right-hand space) ──────────
       placement = 'right';
       left = bubbleRect.right + GAP;
-      top = Math.max(MARGIN, Math.min(wordRect.top - 8, vh - POPUP_H_EST - MARGIN));
+      top = Math.max(MARGIN, Math.min(wordRect.top - 8, bottomLimit - POPUP_H_EST - MARGIN));
 
     } else if (spaceLeft >= POPUP_W + GAP) {
-      // ── Left of bubble (user messages on the right) ────────────────────────
       placement = 'left';
       left = bubbleRect.left - POPUP_W - GAP;
-      top = Math.max(MARGIN, Math.min(wordRect.top - 8, vh - POPUP_H_EST - MARGIN));
+      top = Math.max(MARGIN, Math.min(wordRect.top - 8, bottomLimit - POPUP_H_EST - MARGIN));
 
     } else if (spaceBelow >= POPUP_H_EST + GAP) {
-      // ── Below the bubble ───────────────────────────────────────────────────
       placement = 'below';
       top = bubbleRect.bottom + GAP;
       left = Math.max(MARGIN, Math.min(wordRect.left - 10, vw - POPUP_W - MARGIN));
 
     } else {
-      // ── Last resort: above the selected word ───────────────────────────────
       placement = 'above';
-      top = wordRect.top - GAP; // transform translateY(-100%) applied via style
+      top = wordRect.top - GAP;
       left = Math.max(MARGIN, Math.min(wordRect.left - 10, vw - POPUP_W - MARGIN));
     }
 
