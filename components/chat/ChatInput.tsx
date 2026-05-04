@@ -240,8 +240,8 @@ export function ChatInput({
     <div
       className={clsx(
         "chat-input-wrapper shrink-0 w-full pointer-events-none transition-all duration-300 ease-out",
-        isPopupActive ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0',
-        "pb-[calc(68px+max(12px,env(safe-area-inset-bottom,12px)))] md:pb-4"
+        isPopupActive ? 'opacity-0 translate-y-4 md:opacity-100 md:translate-y-0' : 'opacity-100 translate-y-0',
+        "pb-[calc(84px+max(12px,env(safe-area-inset-bottom,12px)))] md:pb-4"
       )}
       style={{
         paddingBottom: keyboardOffset > 0 ? `${keyboardOffset}px` : undefined,
