@@ -2,6 +2,7 @@
 
 import { useStats } from '@/lib/contexts/stats-context';
 import { useTheme } from '@/lib/contexts/theme-context';
+import { useTabContext } from '@/lib/contexts/tab-context';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -32,6 +33,11 @@ import { IcebergIllustration, AbyssBackground } from '@/components/stats/Iceberg
 const SF = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif';
 
 export default function StatsPage() {
+  const { setChildrenTab } = useTabContext();
+  useEffect(() => {
+    setChildrenTab('/stats');
+  }, [setChildrenTab]);
+
   const { stats, loading, error, refetch } = useStats();
   const { theme } = useTheme();
   const isDark = theme === 'dark';

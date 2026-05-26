@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useStats } from '@/lib/contexts/stats-context';
 import { useTheme } from '@/lib/contexts/theme-context';
 import { getLevelInfo } from '@/lib/game/levels';
+import { useTabContext } from '@/lib/contexts/tab-context';
 
 import dynamic from 'next/dynamic';
 
@@ -48,6 +49,11 @@ export function DashboardClient({
   initialFriends?: any[];
   initialPendingIn?: number;
 } = {}) {
+  const { setChildrenTab } = useTabContext();
+  useEffect(() => {
+    setChildrenTab('/');
+  }, [setChildrenTab]);
+
   const { stats, loading } = useStats();
   const { theme } = useTheme();
   const isDark = theme !== 'light';

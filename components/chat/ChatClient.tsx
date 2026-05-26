@@ -13,6 +13,7 @@ import { EmptyChatState } from '@/components/chat/EmptyChatState';
 import { MobileChatList } from '@/components/chat/MobileChatList';
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { useChatBusinessLogic } from '@/hooks/useChatBusinessLogic';
+import { useTabContext } from '@/lib/contexts/tab-context';
 import dynamic from 'next/dynamic';
 
 const PersonaStudio = dynamic(
@@ -50,7 +51,7 @@ import { haptics } from '@/lib/utils/haptics';
 
 import { DailyBounties } from '@/components/chat/DailyBounties';
 import { startInactivityNotifications, stopInactivityNotifications } from '@/lib/notifications';
-import { useChatHandlers } from '@/hooks/useChatHandlers';
+import { useChatHandlers as useChatHandlersOriginal } from '@/hooks/useChatHandlers';
 import { usePWAInstall } from '@/lib/contexts/pwa-install-context';
 import { toast } from 'sonner';
 
@@ -103,6 +104,11 @@ interface ChatClientProps {
 
 
 export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
+  const { setChildrenTab } = useTabContext();
+  useEffect(() => {
+    setChildrenTab('/chat');
+  }, [setChildrenTab]);
+
   const hydrated = useHydratedStore();
   const { stats, leveledUp, clearLevelUp } = useStats();
   const {
@@ -112,7 +118,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
     handleSelectSession, handleDeleteSession, handleEditMessage, handleDeleteMessage,
     handleBlockAI, handleUnblockAI, handleClearMemory, handleWipePersonaMemory, handleInitializeSession, handleSendMessage,
     sessions, setSessions, selectedSessionId, setSelectedSessionId, addSession,
-  } = useChatHandlers();
+  } = useChatHandlersOriginal();
 
   // Track whether we're doing the initial sessions HTTP fetch
   const [chatSessionsLoading, setChatSessionsLoading] = useState(true);

@@ -10,12 +10,16 @@ interface TabContextValue {
   activeTab: TabRoute;
   setActiveTab: (tab: TabRoute) => void;
   prevTab: TabRoute | null;
+  childrenTab: TabRoute;
+  setChildrenTab: (tab: TabRoute) => void;
 }
 
 const TabContext = createContext<TabContextValue>({
   activeTab: '/',
   setActiveTab: () => { },
   prevTab: null,
+  childrenTab: '/',
+  setChildrenTab: () => { },
 });
 
 export function TabProvider({ children }: { children: ReactNode }) {
@@ -26,6 +30,7 @@ export function TabProvider({ children }: { children: ReactNode }) {
 
   const [activeTab, setActiveTabState] = useState<TabRoute>(initialTab);
   const [prevTab, setPrevTab] = useState<TabRoute | null>(null);
+  const [childrenTab, setChildrenTab] = useState<TabRoute>(initialTab);
 
   const setActiveTab = useCallback((tab: TabRoute) => {
     setPrevTab(prev => prev !== tab ? activeTab : prev);
@@ -58,7 +63,7 @@ export function TabProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <TabContext.Provider value={{ activeTab, setActiveTab, prevTab }}>
+    <TabContext.Provider value={{ activeTab, setActiveTab, prevTab, childrenTab, setChildrenTab }}>
       {children}
     </TabContext.Provider>
   );
