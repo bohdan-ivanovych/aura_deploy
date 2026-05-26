@@ -3,16 +3,14 @@
  *
  * Unified short-video context extractor for:
  *   - TikTok      (via TikWM API + Whisper)
- *   - YouTube Shorts (via yt-dlp-compatible endpoint + Whisper)
- *   - Instagram Reels (via Reels-compatible endpoint + Whisper)
+ *   - YouTube Shorts (via youtube-transcript or Whisper)
+ *   - Instagram Reels (via Cobalt API + Whisper)
  *
  * Architecture:
  *   1. Each platform has a lightweight `PlatformAdapter` that fetches
  *      metadata + a streamable video/audio URL.
  *   2. The shared `processShortVideo()` pipeline runs Whisper on the
  *      download URL, then falls back to Vision API on the cover image.
- *   3. The legacy `processTikTokMultimodal()` re-export keeps all
- *      existing callers working with zero changes.
  */
 
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -24,7 +22,6 @@ import YTDlpWrap from 'yt-dlp-wrap';
 const googleProvider = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
 });
-
 
 const ytDlp = new YTDlpWrap();
 
@@ -44,7 +41,6 @@ export interface ShortVideoContext {
   error?: string;
 }
 
-/** @deprecated Use ShortVideoContext directly */
 export type FullTikTokContext = ShortVideoContext;
 
 interface PlatformMeta {
@@ -74,10 +70,48 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 
 // ─── Platform Adapters ────────────────────────────────────────────────────────
 
+async function fetchMetaViaCobalt(url: string): Promise<PlatformMeta | null> {
+  try {
+    console.log('[VideoProcessor:Cobalt] Querying cobalt API for:', url);
+    const res = await fetch('https://api.cobalt.tools/api/json', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        url: url,
+        downloadMode: 'audio',
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.url) {
+        console.log('[VideoProcessor:Cobalt] Successfully got download url:', data.url);
+        return {
+          title: data.filename || null,
+          authorName: null,
+          playUrl: data.url,
+          coverUrl: null,
+          fileSizeBytes: null,
+        };
+      }
+    } else {
+      console.warn('[VideoProcessor:Cobalt] status not ok:', res.status);
+    }
+  } catch (e) {
+    console.warn('[VideoProcessor:Cobalt] error:', e);
+  }
+  return null;
+}
+
 /**
- * TikTok — uses yt-dlp-wrap.
+ * TikTok — uses Cobalt API with yt-dlp fallback.
  */
 async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
+  const cobaltMeta = await fetchMetaViaCobalt(url);
+  if (cobaltMeta?.playUrl) return cobaltMeta;
+
   try {
     const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'TikTok metadata');
     // Prefer best audio format if available, otherwise fallback to general url
@@ -100,8 +134,6 @@ async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
  * YouTube Shorts — uses youtube-transcript for direct text extraction.
  */
 async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta> {
-  // Try youtube-transcript directly for fast text extraction (no Whisper needed!)
-  // This will skip the playUrl audio extraction and rely on YouTube's captions.
   return {
     title: fallbackTitle,
     authorName: null,
@@ -111,10 +143,14 @@ async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promi
 }
 
 /**
- * Instagram Reels — uses yt-dlp-wrap with graceful fallback.
- * If yt-dlp fails (ENOENT / network), returns minimal meta and signals no context.
+ * Instagram Reels — uses Cobalt API with yt-dlp fallback.
  */
 async function fetchReelsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta & { _noContext?: boolean }> {
+  const cobaltMeta = await fetchMetaViaCobalt(url);
+  if (cobaltMeta?.playUrl) {
+    return { ...cobaltMeta, title: cobaltMeta.title || fallbackTitle };
+  }
+
   try {
     const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'Reels metadata');
     const bestAudio = info.formats?.filter((f: any) => f.acodec !== 'none')?.sort((a: any, b: any) => (b.tbr || 0) - (a.tbr || 0))[0];
@@ -181,7 +217,6 @@ async function runTranscriptionPipeline(
   }
 
   // ── Step 2: Vision analysis on cover image (always attempted if available) ───
-  // Gemini can accept image URLs directly — no need to download the buffer.
   if (meta.coverUrl) {
     try {
       const coverUrl = meta.coverUrl;
@@ -225,13 +260,6 @@ async function runTranscriptionPipeline(
 
 // ─── Public Entry Point ───────────────────────────────────────────────────────
 
-/**
- * processShortVideo — universal short-video context extractor.
- *
- * @param platform  'tiktok' | 'shorts' | 'reels'
- * @param url       Clean URL (no query string) to the video
- * @param fallbackTitle  Optional title from oEmbed / page meta
- */
 export async function processShortVideo(
   platform: ShortVideoPlatform,
   url: string,
@@ -266,9 +294,7 @@ export async function processShortVideo(
 
     result.title = meta.title || fallbackTitle;
     result.authorName = meta.authorName;
-    // Prefer platform-provided thumbnail, fall back to caller-supplied oEmbed one
     result.thumbnailUrl = meta.coverUrl || externalCoverUrl;
-    // Ensure Vision pipeline has a cover to work with
     if (!meta.coverUrl && externalCoverUrl) meta.coverUrl = externalCoverUrl;
 
     console.log(`[VideoProcessor:${platform}] Fetched metadata → Title: "${result.title}", Author: "${result.authorName}"`);
@@ -302,12 +328,6 @@ export async function processShortVideo(
   return result;
 }
 
-// ─── Backwards-compat re-export ───────────────────────────────────────────────
-
-/**
- * @deprecated Use processShortVideo('tiktok', url, oEmbedTitle) instead.
- * Kept for zero-change compatibility with existing callers.
- */
 export async function processTikTokMultimodal(
   url: string,
   oEmbedTitle: string | null,

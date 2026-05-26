@@ -19,6 +19,7 @@ interface TabShellProps {
 export function TabShell({ children, isTabRoute }: TabShellProps) {
   const { activeTab } = useTabContext();
   const [mounted, setMounted] = useState(false);
+  const [initialTab] = useState<TabRoute>(activeTab);
   // Lazily track visited tabs — only mount a tab when it's first activated
   const [visited, setVisited] = useState<Set<TabRoute>>(() => new Set([activeTab] as TabRoute[]));
 
@@ -52,10 +53,10 @@ export function TabShell({ children, isTabRoute }: TabShellProps) {
               contain: isActive ? 'none' : 'strict',
             }}
           >
-            {tab === '/'           && <HomeTab />}
-            {tab === '/chat'       && <ChatTab initialSessions={[]} />}
-            {tab === '/flashcards' && <FlashcardsTab />}
-            {tab === '/stats'      && <StatsTab />}
+            {tab === '/'           && (initialTab === '/' ? children : <HomeTab />)}
+            {tab === '/chat'       && (initialTab === '/chat' ? children : <ChatTab initialSessions={[]} />)}
+            {tab === '/flashcards' && (initialTab === '/flashcards' ? children : <FlashcardsTab />)}
+            {tab === '/stats'      && (initialTab === '/stats' ? children : <StatsTab />)}
           </div>
         );
       })}

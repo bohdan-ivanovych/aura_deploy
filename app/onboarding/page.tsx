@@ -327,6 +327,11 @@ export default function OnboardingPage() {
       if (data?.session?.id) localStorage.setItem('lastSelectedSessionId', data.session.id);
     }).catch(() => {});
 
+    // Show onboarding explanation for Magic Word before redirecting!
+    await showAIWithDelay(`Perfect! I've set your translation language to ${langName}.`, 700);
+    await showAIWithDelay(`💡 Quick tip: In our chat, you can TAP ANY WORD in my messages to see its translation or hear it read aloud! Try it once we start.`, 1600);
+    await new Promise(r => setTimeout(r, 4500));
+
     setStep('done');
     // picker=true auto-opens PersonaStudio in ChatClient
     // Force a full hydration reload to clear cached "Diver" name in context

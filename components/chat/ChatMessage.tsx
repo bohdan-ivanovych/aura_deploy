@@ -318,7 +318,7 @@ export const ChatMessage = memo(function ChatMessage({
                   ) : !isEditing && isAI ? (
                     reelMode ? (
                       <MagicTextWrapper fullMessageText={bubbleText}>
-                        <p className="text-[14px] leading-[1.8] font-medium text-[var(--foreground)] tracking-[0.005em] select-text">{bubbleText}</p>
+                        <p className="text-[14px] leading-[1.8] font-medium text-[var(--foreground)] tracking-[0.005em] select-text break-words whitespace-pre-wrap">{bubbleText}</p>
                       </MagicTextWrapper>
                     ) : (
                       <ClickableWordText text={bubbleText} voiceId={voiceId} fullMessageText={bubbleText} magicHintWordIndices={magicHintWordIndices} />
@@ -326,26 +326,7 @@ export const ChatMessage = memo(function ChatMessage({
                   ) : !isEditing && errorSpan ? (
                     <ErrorHighlightedText text={bubbleText} errorSpan={errorSpan} onReadTimeout={onWordPopupRead} />
                   ) : !isEditing && (
-                    <p className="text-[14px] leading-[1.65] font-medium text-[var(--foreground)] tracking-[0.005em] after:content-[''] after:inline-block after:w-[46px] after:h-2">{bubbleText}</p>
-                  )}
-
-                  {/* ОНОВЛЕНО: Блок корекції тепер має матовий фон та border, щоб не бути прозорим */}
-                  {isLastBubble && (grammarCorrection || vocabularyNote || vibeNote || tiktokNote) && (
-                    <div className="mt-3 flex flex-col gap-2 relative z-[10]">
-                      <div className="rounded-xl overflow-hidden backdrop-blur-xl shadow-sm" style={{ background: 'var(--surface)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
-                        <div className="p-0.5">
-                          {grammarCorrection ? (
-                            <GrammarNoteCard messageId={messageId} text={grammarCorrection} weaknessIdentified={weaknessIdentified} />
-                          ) : tiktokNote ? (
-                            <TikTokNoteCard data={tiktokNote} />
-                          ) : vocabularyNote ? (
-                            <VocabularyNoteCard messageId={messageId} text={vocabularyNote} weaknessIdentified={weaknessIdentified} />
-                          ) : vibeNote ? (
-                            <VibeNoteCard text={vibeNote} />
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
+                    <p className="text-[14px] leading-[1.65] font-medium text-[var(--foreground)] tracking-[0.005em] after:content-[''] after:inline-block after:w-[46px] after:h-2 break-words whitespace-pre-wrap">{bubbleText}</p>
                   )}
 
                   {isLastBubble && (grammarCorrection || vocabularyNote || vibeNote || tiktokNote) ? (
@@ -367,6 +348,25 @@ export const ChatMessage = memo(function ChatMessage({
 
             <ReactionPill reaction={reaction || null} isAI={isAI} />
           </div>
+
+          {/* Grammar/Vocabulary Note card rendered outside the bubbleRef wrapper so it isn't copied or long-pressed */}
+          {(grammarCorrection || vocabularyNote || vibeNote || tiktokNote) && (
+            <div className="mt-2 w-full max-w-full relative z-[10] self-stretch">
+              <div className="rounded-xl overflow-hidden backdrop-blur-xl shadow-sm" style={{ background: 'var(--surface)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                <div className="p-0.5">
+                  {grammarCorrection ? (
+                    <GrammarNoteCard messageId={messageId} text={grammarCorrection} weaknessIdentified={weaknessIdentified} />
+                  ) : tiktokNote ? (
+                    <TikTokNoteCard data={tiktokNote} />
+                  ) : vocabularyNote ? (
+                    <VocabularyNoteCard messageId={messageId} text={vocabularyNote} weaknessIdentified={weaknessIdentified} />
+                  ) : vibeNote ? (
+                    <VibeNoteCard text={vibeNote} />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          )}
 
           {isLastInGroup && (
              <MessageMetadata isAI={isAI} messageId={messageId} message={message} voiceId={voiceId} onReply={onReply} />

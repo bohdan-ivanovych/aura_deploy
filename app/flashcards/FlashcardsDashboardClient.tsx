@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Star, Brain, Library, Search, AlertCircle, BookA } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/contexts/theme-context';
 import { CreateDeckModal } from '@/components/flashcards/CreateDeckModal';
+import { useTabContext } from '@/lib/contexts/tab-context';
 
 const SPRING = { type: 'spring' as const, stiffness: 400, damping: 28 };
 
@@ -28,6 +29,8 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
   const { theme } = useTheme();
   const isDark = theme !== 'light';
   const router = useRouter();
+  const { activeTab } = useTabContext();
+  const isInitialMount = useRef(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -59,42 +62,45 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
   });
 
   useEffect(() => {
-    // If rendered with props from server, skip fetching
-    if (props.decks) return;
+    // If it's the initial mount and server props are provided, skip fetch
+    if (isInitialMount.current && props.decks) {
+      isInitialMount.current = false;
+      return;
+    }
+    isInitialMount.current = false;
+
+    // Only fetch when the tab is actively focused, or if we have no initial props
+    if (activeTab !== '/flashcards' && props.decks) return;
 
     let mounted = true;
     const load = async () => {
       try {
-        const cardsRes = await fetch('/api/flashcards');
-        const cardsData = await cardsRes.json();
-        const allCards: any[] = cardsData.cards ?? [];
-        
-        // Compute stats client-side
-        const mainCount = allCards.filter((c: any) => !c.deckId).length;
-        const starredCount = allCards.filter((c: any) => c.isStarred).length;
-        const learning = allCards.filter((c: any) => (c.fsrsScheduledDays ?? 0) < 21).length;
+        const res = await fetch('/api/flashcards/dashboard');
+        if (!res.ok) throw new Error('Failed to fetch dashboard stats');
+        const dashboardData = await res.json();
 
         if (!mounted) return;
         setData({
-          decks: [],
-          mainDeckCardCount: mainCount,
-          starredCardCount: starredCount,
-          learningCount: learning,
-          grammarMistakesCount: 0,
-          grammarMistakesDeckId: null,
-          vocabMistakesCount: 0,
-          vocabMistakesDeckId: null,
-          legacyMistakesCount: 0,
-          legacyMistakesDeckId: null,
+          decks: dashboardData.decks ?? [],
+          mainDeckCardCount: dashboardData.mainDeckCardCount ?? 0,
+          starredCardCount: dashboardData.starredCardCount ?? 0,
+          learningCount: dashboardData.learningCount ?? 0,
+          grammarMistakesCount: dashboardData.grammarMistakesCount ?? 0,
+          grammarMistakesDeckId: dashboardData.grammarMistakesDeckId ?? null,
+          vocabMistakesCount: dashboardData.vocabMistakesCount ?? 0,
+          vocabMistakesDeckId: dashboardData.vocabMistakesDeckId ?? null,
+          legacyMistakesCount: dashboardData.legacyMistakesCount ?? 0,
+          legacyMistakesDeckId: dashboardData.legacyMistakesDeckId ?? null,
           loading: false,
         });
-      } catch {
+      } catch (err) {
+        console.error('Failed to load flashcards dashboard stats:', err);
         if (mounted) setData(prev => ({ ...prev, loading: false }));
       }
     };
     void load();
     return () => { mounted = false; };
-  }, [props.decks]);
+  }, [activeTab, props.decks]);
 
   const { decks, mainDeckCardCount, starredCardCount, learningCount, grammarMistakesCount, grammarMistakesDeckId, vocabMistakesCount, vocabMistakesDeckId, legacyMistakesCount, legacyMistakesDeckId, loading: isLoading } = data;
 
