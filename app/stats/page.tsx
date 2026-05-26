@@ -33,10 +33,6 @@ import { IcebergIllustration, AbyssBackground } from '@/components/stats/Iceberg
 const SF = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif';
 
 export default function StatsPage() {
-  const { setChildrenTab } = useTabContext();
-  useEffect(() => {
-    setChildrenTab('/stats');
-  }, [setChildrenTab]);
 
   const { stats, loading, error, refetch } = useStats();
   const { theme } = useTheme();

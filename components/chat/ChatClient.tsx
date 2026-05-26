@@ -104,10 +104,6 @@ interface ChatClientProps {
 
 
 export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
-  const { setChildrenTab } = useTabContext();
-  useEffect(() => {
-    setChildrenTab('/chat');
-  }, [setChildrenTab]);
 
   const hydrated = useHydratedStore();
   const { stats, leveledUp, clearLevelUp } = useStats();

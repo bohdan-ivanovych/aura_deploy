@@ -49,10 +49,6 @@ export function DashboardClient({
   initialFriends?: any[];
   initialPendingIn?: number;
 } = {}) {
-  const { setChildrenTab } = useTabContext();
-  useEffect(() => {
-    setChildrenTab('/');
-  }, [setChildrenTab]);
 
   const { stats, loading } = useStats();
   const { theme } = useTheme();

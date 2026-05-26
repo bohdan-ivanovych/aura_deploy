@@ -29,11 +29,7 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
   const { theme } = useTheme();
   const isDark = theme !== 'light';
   const router = useRouter();
-  const { activeTab, setChildrenTab } = useTabContext();
-
-  useEffect(() => {
-    setChildrenTab('/flashcards');
-  }, [setChildrenTab]);
+  const { activeTab } = useTabContext();
   const isInitialMount = useRef(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
