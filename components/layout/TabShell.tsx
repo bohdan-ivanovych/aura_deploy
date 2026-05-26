@@ -2,6 +2,7 @@
 
 import { useState, useEffect, type ReactNode } from 'react';
 import { useTabContext, type TabRoute } from '@/lib/contexts/tab-context';
+import { usePathname } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
 const HomeTab       = dynamic(() => import('@/components/dashboard/DashboardClient').then(mod => mod.DashboardClient), { ssr: false });
@@ -18,8 +19,8 @@ interface TabShellProps {
 
 export function TabShell({ children, isTabRoute }: TabShellProps) {
   const { activeTab } = useTabContext();
+  const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
-  const [initialTab] = useState<TabRoute>(activeTab);
   // Lazily track visited tabs — only mount a tab when it's first activated
   const [visited, setVisited] = useState<Set<TabRoute>>(() => new Set([activeTab] as TabRoute[]));
 
@@ -53,10 +54,10 @@ export function TabShell({ children, isTabRoute }: TabShellProps) {
               contain: isActive ? 'none' : 'strict',
             }}
           >
-            {tab === '/'           && (initialTab === '/' ? children : <HomeTab />)}
-            {tab === '/chat'       && (initialTab === '/chat' ? children : <ChatTab initialSessions={[]} />)}
-            {tab === '/flashcards' && (initialTab === '/flashcards' ? children : <FlashcardsTab />)}
-            {tab === '/stats'      && (initialTab === '/stats' ? children : <StatsTab />)}
+            {tab === '/'           && (pathname === '/' ? children : <HomeTab />)}
+            {tab === '/chat'       && (pathname === '/chat' ? children : <ChatTab initialSessions={[]} />)}
+            {tab === '/flashcards' && (pathname === '/flashcards' ? children : <FlashcardsTab />)}
+            {tab === '/stats'      && (pathname === '/stats' ? children : <StatsTab />)}
           </div>
         );
       })}
