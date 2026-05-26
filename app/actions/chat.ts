@@ -243,7 +243,15 @@ export async function sendMessageStream(
             videoUrl = tiktokMatch[0].split('?')[0];
           }
 
-          shortVideoContext = await processShortVideo(platform, videoUrl, null);
+          // Let the bot actually inspect short-video context before replying, but
+          // keep a firm cap so bad embeds/providers degrade into an honest question.
+          const videoTimeoutPromise = new Promise<ShortVideoContext | null>(
+            resolve => setTimeout(() => resolve(null), 12_000)
+          );
+          shortVideoContext = await Promise.race([
+            processShortVideo(platform, videoUrl, null).catch(() => null),
+            videoTimeoutPromise,
+          ]);
         }
 
         const { bubbles, parsedMeta } = await generateChatResponse({
@@ -391,9 +399,10 @@ export async function sendMessageStream(
           // Typing indicator before each bubble
           enqueue(sseEvent('typing_indicator', { bubbleIndex: i }));
 
-          // Dynamic delay: simulate typing speed (approx 18ms per char + 400ms base thinking/transition)
-          // For the first bubble it's usually faster as AI "already thought", for second it feels like double-texting.
-          const typingDelay = Math.min(3000, Math.max(1200, bubbleText.length * 15));
+          // Dynamic delay: simulate typing speed (approx 8ms per char + 300ms base)
+          // Capped at 2200ms to feel responsive on mobile
+          const typingDelay = Math.min(2200, Math.max(600, bubbleText.length * 8));
+
           await new Promise(r => setTimeout(r, typingDelay));
 
           // Randomly make the first bubble a "reply" to the user's message (visual quote)
@@ -567,7 +576,13 @@ export async function sendMessageStream(
             const numMatch = uq.quest.description.match(/\b(\d+)\b/);
             if (numMatch) {
               const target = parseInt(numMatch[1], 10);
-              const newProgress = (uq.progress || 0) + 1;
+              // Re-fetch the latest progress from DB to avoid using stale in-memory value
+              const freshUq = await prisma.userQuest.findUnique({
+                where: { id: uq.id },
+                select: { progress: true, completed: true },
+              });
+              if (!freshUq || freshUq.completed) continue;
+              const newProgress = (freshUq.progress || 0) + 1;
               if (newProgress >= target) {
                 const depthReward = Math.max(1, Math.ceil(uq.quest.xp / 10));
                 await prisma.userQuest.update({

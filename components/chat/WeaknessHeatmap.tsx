@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, TrendingUp, TrendingDown, RefreshCw, ChevronRight } from 'lucide-react';
 import { useTheme } from '@/lib/contexts/theme-context';
 import { useRouter } from 'next/navigation';
-import { mapWeaknessToNodeSlug } from '@/lib/game/grammar-nodes';
+import { resolveSkillTopic } from '@/lib/game/grammar-nodes';
 import Link from 'next/link';
 
 interface WeaknessItem {
@@ -189,9 +189,8 @@ export const WeaknessHeatmap = memo(function WeaknessHeatmap() {
                       transition={{ delay: i * 0.04 }}
                       className="relative flex items-center gap-4 px-5 py-3.5 overflow-hidden cursor-pointer hover:bg-[var(--surface-hover)] transition-colors"
                       onClick={() => {
-                        const slug = mapWeaknessToNodeSlug(w.rule);
-                        if (slug) router.push(`/skill-tree?topic=${slug}`);
-                        else router.push(`/skill-tree?topic=${encodeURIComponent(w.rule)}`);
+                        const topic = resolveSkillTopic(w.rule);
+                        router.push(`/skill-tree?topic=${encodeURIComponent(topic?.slug ?? w.rule)}`);
                       }}
                     >
                       {/* intensity fill */}

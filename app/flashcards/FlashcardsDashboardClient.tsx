@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Star, Brain, Library, Search } from 'lucide-react';
+import { Plus, Star, Brain, Library, Search, AlertCircle, BookA } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTheme } from '@/lib/contexts/theme-context';
@@ -16,6 +16,12 @@ interface FlashcardsProps {
   mainDeckCardCount?: number;
   starredCardCount?: number;
   learningCount?: number;
+  grammarMistakesCount?: number;
+  grammarMistakesDeckId?: string | null;
+  vocabMistakesCount?: number;
+  vocabMistakesDeckId?: string | null;
+  legacyMistakesCount?: number;
+  legacyMistakesDeckId?: string | null;
 }
 
 export default function FlashcardsDashboardClient(props: FlashcardsProps) {
@@ -31,12 +37,24 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
     mainDeckCardCount: number;
     starredCardCount: number;
     learningCount: number;
+    grammarMistakesCount: number;
+    grammarMistakesDeckId: string | null;
+    vocabMistakesCount: number;
+    vocabMistakesDeckId: string | null;
+    legacyMistakesCount: number;
+    legacyMistakesDeckId: string | null;
     loading: boolean;
   }>({
     decks: props.decks ?? [],
     mainDeckCardCount: props.mainDeckCardCount ?? 0,
     starredCardCount: props.starredCardCount ?? 0,
     learningCount: props.learningCount ?? 0,
+    grammarMistakesCount: props.grammarMistakesCount ?? 0,
+    grammarMistakesDeckId: props.grammarMistakesDeckId ?? null,
+    vocabMistakesCount: props.vocabMistakesCount ?? 0,
+    vocabMistakesDeckId: props.vocabMistakesDeckId ?? null,
+    legacyMistakesCount: props.legacyMistakesCount ?? 0,
+    legacyMistakesDeckId: props.legacyMistakesDeckId ?? null,
     loading: !props.decks, // Only loading if no props
   });
 
@@ -58,10 +76,16 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
 
         if (!mounted) return;
         setData({
-          decks: [], // Custom decks need a separate fetch
+          decks: [],
           mainDeckCardCount: mainCount,
           starredCardCount: starredCount,
           learningCount: learning,
+          grammarMistakesCount: 0,
+          grammarMistakesDeckId: null,
+          vocabMistakesCount: 0,
+          vocabMistakesDeckId: null,
+          legacyMistakesCount: 0,
+          legacyMistakesDeckId: null,
           loading: false,
         });
       } catch {
@@ -72,7 +96,7 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
     return () => { mounted = false; };
   }, [props.decks]);
 
-  const { decks, mainDeckCardCount, starredCardCount, learningCount, loading: isLoading } = data;
+  const { decks, mainDeckCardCount, starredCardCount, learningCount, grammarMistakesCount, grammarMistakesDeckId, vocabMistakesCount, vocabMistakesDeckId, legacyMistakesCount, legacyMistakesDeckId, loading: isLoading } = data;
 
   const handleCreateDeck = () => {
     setIsModalOpen(true);
@@ -199,6 +223,84 @@ export default function FlashcardsDashboardClient(props: FlashcardsProps) {
                 </motion.div>
               </Link>
               
+              {/* Grammar Mistakes Deck */}
+              <Link href={grammarMistakesDeckId ? `/flashcards/${grammarMistakesDeckId}` : '/flashcards'}>
+                <motion.div
+                  whileHover={{ y: -4, scale: 1.01 }}
+                  transition={SPRING}
+                  className="relative rounded-3xl p-6 overflow-hidden cursor-pointer"
+                  style={{
+                    background: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.2)',
+                    boxShadow: isDark ? 'inset 0 1px 0 rgba(255,255,255,0.05)' : '0 4px 20px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <AlertCircle className="w-24 h-24 text-red-500" />
+                  </div>
+                  <h3 className="text-xl font-black mb-1" style={{ color: isDark ? '#fff' : '#1D1D1F' }}>Grammar Mistakes</h3>
+                  <p className="text-sm font-medium" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
+                    {grammarMistakesCount} cards
+                  </p>
+                  <div className="mt-10 flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap" style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+                      From chat corrections
+                    </div>
+                  </div>
+                </motion.div>
+              </Link>
+
+              {/* Vocabulary Mistakes Deck */}
+              <Link href={vocabMistakesDeckId ? `/flashcards/${vocabMistakesDeckId}` : '/flashcards'}>
+                <motion.div
+                  whileHover={{ y: -4, scale: 1.01 }}
+                  transition={SPRING}
+                  className="relative rounded-3xl p-6 overflow-hidden cursor-pointer"
+                  style={{
+                    background: isDark ? 'rgba(59,130,246,0.05)' : 'rgba(59,130,246,0.08)',
+                    border: '1px solid rgba(59,130,246,0.2)',
+                    boxShadow: isDark ? 'inset 0 1px 0 rgba(255,255,255,0.05)' : '0 4px 20px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                    <BookA className="w-24 h-24 text-blue-500" />
+                  </div>
+                  <h3 className="text-xl font-black mb-1" style={{ color: isDark ? '#fff' : '#1D1D1F' }}>Vocabulary Mistakes</h3>
+                  <p className="text-sm font-medium" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
+                    {vocabMistakesCount} cards
+                  </p>
+                  <div className="mt-10 flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-bold px-3 py-1.5 rounded-full whitespace-nowrap" style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
+                      From bad word choices
+                    </div>
+                  </div>
+                </motion.div>
+              </Link>
+
+              {/* Legacy Mistakes Deck */}
+              {(legacyMistakesCount > 0 || legacyMistakesDeckId) && (
+                <Link href={legacyMistakesDeckId ? `/flashcards/${legacyMistakesDeckId}` : '/flashcards'}>
+                  <motion.div
+                    whileHover={{ y: -4, scale: 1.01 }}
+                    transition={SPRING}
+                    className="relative rounded-3xl p-6 overflow-hidden cursor-pointer"
+                    style={{
+                      background: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.08)',
+                      border: '1px solid rgba(239,68,68,0.2)',
+                      boxShadow: isDark ? 'inset 0 1px 0 rgba(255,255,255,0.05)' : '0 4px 20px rgba(0,0,0,0.04)',
+                    }}
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                      <AlertCircle className="w-24 h-24 text-red-500" />
+                    </div>
+                    <h3 className="text-xl font-black mb-1" style={{ color: isDark ? '#fff' : '#1D1D1F' }}>Legacy Mistakes</h3>
+                    <p className="text-sm font-medium" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }}>
+                      {legacyMistakesCount} cards
+                    </p>
+                  </motion.div>
+                </Link>
+              )}
+
               {/* Starred Elements */}
               <Link href="/flashcards/stars">
                 <motion.div

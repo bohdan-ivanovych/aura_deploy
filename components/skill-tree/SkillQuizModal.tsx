@@ -70,7 +70,7 @@ export function SkillQuizModal({ nodeSlug, nodeTitle, isOpen, onClose, onPassed 
       const res = await fetch('/api/skill-tree/quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: nodeSlug }),
+        body: JSON.stringify({ slug: nodeSlug, title: nodeTitle }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Failed to load quiz');

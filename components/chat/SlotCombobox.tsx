@@ -51,6 +51,7 @@ export function SlotCombobox({
       if (!trimmed || value.includes(trimmed)) return;
       onChange([...value, trimmed]);
       setInputValue('');
+      setIsOpen(false);
     },
     [value, onChange],
   );

@@ -8,6 +8,7 @@ import { useTheme } from '@/lib/contexts/theme-context';
 import { useEffect, useState } from 'react';
 import { useTabContext, TAB_ROUTES, type TabRoute } from '@/lib/contexts/tab-context';
 import { haptics } from '@/lib/utils/haptics';
+import { useChatUIStore } from '@/lib/stores/ui-store';
 
 const NAV_COLORS: Record<string, { from: string; to: string; glow: string }> = {
   '/':           { from: '#00d4d4', to: '#0098db', glow: 'rgba(0,212,212,0.7)' },
@@ -24,6 +25,7 @@ export function BottomNav() {
   const [isPopupActive, setIsPopupActive] = useState(false);
   const { activeTab, setActiveTab } = useTabContext();
   const [dueCount, setDueCount] = useState(0);
+  const { isStudioOpen } = useChatUIStore();
 
   // Listen for flashcard badge updates instead of polling
   useEffect(() => {
@@ -200,7 +202,7 @@ export function BottomNav() {
     <nav
       role="navigation"
       aria-label="Main navigation"
-      className={`fixed z-[100] md:hidden select-none transition-transform duration-300 ${isPopupActive ? 'translate-y-[150%] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
+      className={`fixed z-[100] md:hidden select-none transition-transform duration-300 ${isPopupActive || isStudioOpen ? 'translate-y-[150%] opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'}`}
       style={{ 
         bottom: 'max(16px, env(safe-area-inset-bottom, 16px))',
         left: '20px',

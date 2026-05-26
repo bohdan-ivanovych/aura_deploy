@@ -43,79 +43,61 @@ export async function importPublicDeck(userId: string, publicDeckId: string) {
   });
   if (!publicDeck || !publicDeck.isPublic) throw new Error('Deck not available');
 
-  // Task 11B: check for duplicate import (user already has this deck)
-  const alreadyImported = await prisma.deck.findFirst({
-    where: { userId, title: publicDeck.title, isPublic: false },
-  });
-  if (alreadyImported) throw new Error('You already have this deck in your collection.');
-
   const currentUser = await prisma.user.findUnique({ where: { id: userId } });
-  const translateTo = currentUser?.explanationLanguage === 'native' ? currentUser.nativeLanguage : null;
+  const nativeLanguage = currentUser?.nativeLanguage || 'en';
 
   // Initialize FSRS state for every card
   const emptyCard = createEmptyCard(new Date());
 
-  let finalCards = publicDeck.cards.map(c => ({
-    userId,
-    front: c.front,
-    back: c.back,
-    englishExplanation: c.englishExplanation,
-    type: c.type,
-    contextSentence: c.contextSentence,
-    // Standalone FSRS fields — initialized fresh for this user
-    fsrsState: emptyCard.state,
-    fsrsStability: emptyCard.stability,
-    fsrsDifficulty: emptyCard.difficulty,
-    fsrsElapsedDays: emptyCard.elapsed_days,
-    fsrsScheduledDays: emptyCard.scheduled_days,
-    fsrsReps: emptyCard.reps,
-    fsrsLapses: emptyCard.lapses,
-    nextReview: emptyCard.due,
-  }));
-
-  if (translateTo && translateTo !== 'en') {
-    const { getGroqClient, GROQ_MODEL } = await import('@/lib/ai/groq');
-    const groq = getGroqClient();
-
-    try {
-      const completion = await groq.chat.completions.create({
-        model: GROQ_MODEL,
-        messages: [{
-          role: 'system',
-          content: `Translate these flashcards into ${translateTo}. Keep "front" as is. Translate "back" and "englishExplanation" to ${translateTo}. Return ONLY a JSON object with a "cards" array mirroring the input length and order. Input: ${JSON.stringify(publicDeck.cards.map(c => ({ front: c.front, back: c.back, englishExplanation: c.englishExplanation })))}`
-        }],
-        response_format: { type: 'json_object' },
-        max_tokens: 1500,
-        temperature: 0.1,
-      });
-      const parsed = JSON.parse(completion.choices[0]?.message?.content || '{}');
-      if (parsed.cards && Array.isArray(parsed.cards)) {
-        finalCards = finalCards.map((c, i) => ({
-          ...c,
-          back: parsed.cards[i]?.back || c.back,
-          englishExplanation: parsed.cards[i]?.englishExplanation || c.englishExplanation,
-        }));
+  const finalCards = [];
+  for (const card of publicDeck.cards) {
+    let translatedBack = card.back;
+    
+    // Translate to user's native language if needed
+    if (nativeLanguage && nativeLanguage !== 'en') {
+      try {
+        const gRes = await fetch(
+          `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${nativeLanguage}&dt=t&q=${encodeURIComponent(card.back)}`
+        );
+        if (gRes.ok) {
+          const tData = await gRes.json();
+          if (tData && tData[0] && tData[0][0]) {
+            translatedBack = tData[0][0][0];
+          }
+        }
+      } catch (e) {
+        console.error('Failed to translate card:', e);
       }
-    } catch (e) {
-      console.error('Failed to dynamically translate library deck', e);
     }
+
+    finalCards.push({
+      userId,
+      front: card.front,
+      back: translatedBack,
+      englishExplanation: card.englishExplanation,
+      type: card.type,
+      contextSentence: card.contextSentence,
+      deckId: null, // Add to Main Collection
+      // Standalone FSRS fields — initialized fresh for this user
+      fsrsState: emptyCard.state,
+      fsrsStability: emptyCard.stability,
+      fsrsDifficulty: emptyCard.difficulty,
+      fsrsElapsedDays: emptyCard.elapsed_days,
+      fsrsScheduledDays: emptyCard.scheduled_days,
+      fsrsReps: emptyCard.reps,
+      fsrsLapses: emptyCard.lapses,
+      nextReview: emptyCard.due,
+    });
   }
 
-  // Task 11B: standalone — no originalId, so deck survives if source is deleted
-  const clonedDeck = await prisma.deck.create({
-    data: {
-      userId,
-      title: publicDeck.title,
-      description: publicDeck.description,
-      isPublic: false,
-      // Intentionally omit originalId → fully independent copy
-      cards: {
-        create: finalCards,
-      },
-    },
+  // Add all cards to Main Collection (deckId = null)
+  await prisma.flashcard.createMany({
+    data: finalCards,
+    skipDuplicates: true,
   });
+
   revalidatePath('/flashcards');
-  return clonedDeck;
+  return { success: true, importedCount: finalCards.length };
 }
 
 export async function toggleDeckLike(userId: string, deckId: string) {

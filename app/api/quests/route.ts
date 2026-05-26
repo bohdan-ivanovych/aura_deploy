@@ -6,6 +6,15 @@ import { generatePersonalizedQuests } from '@/lib/ai/groq-quests';
 
 const CATEGORIES: QuestCategory[] = ['vocab', 'grammar', 'fluency', 'consistency', 'engagement'];
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
+}
+
 async function seedQuestsIfNeeded() {
   const existing = await prisma.quest.findMany({
     where: { title: { in: QUEST_BANK.map(q => q.title) } },
@@ -43,6 +52,7 @@ export async function GET() {
 
     const today = todayUTC();
     const dateStr = new Date().toISOString().slice(0, 10);
+    const currentDailyPrefix = `Daily ${dateStr}:`;
     const seededRandom = makeSeededRandom(user.id, dateStr);
 
     // Fetch all quests from DB
@@ -66,7 +76,7 @@ export async function GET() {
     }
 
     // Fetch user quests (forcing turbopack cache bust)
-    const userQuests = await prisma.userQuest.findMany({
+    let userQuests = await prisma.userQuest.findMany({
       where: { userId: user.id },
       select: {
         id: true,
@@ -87,7 +97,7 @@ export async function GET() {
     // Check if we already generated Daily quests today
     // Note: UserQuest has no createdAt — use all Daily: entries as a proxy
     const todaysDailyQuests = userQuests.filter(uq =>
-      uq.quest.title.startsWith('Daily:')
+      uq.quest.title.startsWith(currentDailyPrefix)
     ).map(uq => uq.quest);
 
 
@@ -105,11 +115,14 @@ export async function GET() {
         const topWeaknesses = weaknessRows.map(w => w.rule);
         const cefrLevel = user.detectedLevel || 'B1';
 
-        const llmQuests = await generatePersonalizedQuests(cefrLevel, topWeaknesses);
+        const llmQuests = await withTimeout(
+          generatePersonalizedQuests(cefrLevel, topWeaknesses),
+          8_000,
+        );
 
         const createdQuests = await Promise.all(llmQuests.map(async (llmQ) => {
           const newQ = await prisma.quest.create({
-            data: { title: `Daily: ${llmQ.title}`, description: llmQ.description, xp: llmQ.xp }
+            data: { title: `${currentDailyPrefix} ${llmQ.title}`, description: llmQ.description, xp: llmQ.xp }
           });
           await prisma.userQuest.create({ data: { userId: user.id, questId: newQ.id } });
           return newQ;
@@ -153,6 +166,29 @@ export async function GET() {
     const uniqueBounties = Array.from(bountyByTitle.values()).slice(0, 2);
 
     const finalQuestsToDisplay = [...generatedDailyQuests.slice(0,5), ...uniqueBounties];
+
+    const existingUserQuestIds = new Set(userQuests.map(uq => uq.questId));
+    const missingQuestIds = finalQuestsToDisplay
+      .map(q => q.id)
+      .filter(id => !existingUserQuestIds.has(id));
+
+    if (missingQuestIds.length > 0) {
+      await prisma.userQuest.createMany({
+        data: missingQuestIds.map(questId => ({ userId: user.id, questId })),
+      });
+      userQuests = await prisma.userQuest.findMany({
+        where: { userId: user.id },
+        select: {
+          id: true,
+          questId: true,
+          completed: true,
+          completedAt: true,
+          progress: true,
+          quest: { select: { id: true, title: true, description: true, xp: true } }
+        },
+        orderBy: { completedAt: 'desc' },
+      });
+    }
 
     // Build completed set from today
     const completedSet = new Set(

@@ -69,6 +69,7 @@ export async function PATCH(
         ...(typeof body.name === 'string' && body.name.trim() ? { name: body.name.trim() } : {}),
         ...(typeof body.description === 'string' ? { description: body.description.trim() } : {}),
         ...(typeof body.isPublic === 'boolean' ? { isPublic: body.isPublic } : {}),
+        ...(typeof body.avatarUrl === 'string' && body.avatarUrl.trim() ? { avatarUrl: body.avatarUrl.trim() } : {}),
       },
     });
 

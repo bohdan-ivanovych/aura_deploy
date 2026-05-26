@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Anchor, ArrowRight } from 'lucide-react';
 import { haptics } from '@/lib/utils/haptics';
+import { resolveSkillTopic } from '@/lib/game/grammar-nodes';
 
 interface DepthChange {
   delta: number;
@@ -41,7 +42,8 @@ export function XPIndicator({ depthChange, isUser = true }: DepthIndicatorProps)
     if (!hasSkill) return;
     haptics.light();
     setVisible(false);
-    router.push(`/skill-tree?topic=${encodeURIComponent(depthChange.skillSlug!)}`);
+    const topic = resolveSkillTopic(depthChange.skillSlug!);
+    router.push(`/skill-tree?topic=${encodeURIComponent(topic?.slug ?? depthChange.skillSlug!)}`);
   };
 
   const positiveStyle = {

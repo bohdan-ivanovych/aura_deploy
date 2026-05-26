@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import { createFlashcard, updateFlashcard } from '@/app/actions/flashcard';
 import { useTheme } from '@/lib/contexts/theme-context';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, ChevronDown } from 'lucide-react';
 
 const SPRING = { type: 'spring' as const, stiffness: 400, damping: 28 };
 const inputClass = "mt-1.5 w-full rounded-2xl px-4 py-3 text-sm leading-relaxed focus:outline-none transition-all";
@@ -33,6 +33,9 @@ export default function FlashcardFormModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [lastSuggestedBack, setLastSuggestedBack] = useState('');
+  const [selectedDeckId, setSelectedDeckId] = useState<string | null>(deckId);
+  const [decks, setDecks] = useState<any[]>([]);
+  const [deckDropdownOpen, setDeckDropdownOpen] = useState(false);
   
   // Debounce for autosuggest with AbortController to cancel stale requests
   useEffect(() => {
@@ -86,12 +89,22 @@ export default function FlashcardFormModal({
         setFront(editingCard.front);
         setBack(editingCard.back || '');
         setExplanation(editingCard.englishExplanation || '');
+        setSelectedDeckId(editingCard.deckId || null);
       } else {
         setFront('');
         setBack('');
         setExplanation('');
         setLastSuggestedBack('');
+        setSelectedDeckId(null); // Default to Main Collection
       }
+      // Fetch user's decks
+      fetch('/api/flashcards')
+        .then(r => r.json())
+        .then(data => {
+          const userDecks = data.decks || [];
+          setDecks(userDecks);
+        })
+        .catch(() => setDecks([]));
     }
   }, [open, editingCard]);
 
@@ -103,7 +116,17 @@ export default function FlashcardFormModal({
         await updateFlashcard(editingCard.id, userId, { front, back, englishExplanation: explanation });
         toast.success('Card updated');
       } else {
-        await createFlashcard(userId, front, back, 'translation', null, explanation, deckId);
+        await createFlashcard(userId, front, back, 'translation', null, explanation, selectedDeckId);
+        // Success animation with confetti
+        if (typeof window !== 'undefined') {
+          const { default: confetti } = await import('canvas-confetti');
+          confetti({
+            particleCount: 60,
+            spread: 70,
+            origin: { y: 0.7 },
+            colors: ['#00d4d4', '#00e676', '#f59e0b'],
+          });
+        }
         toast.success('Card created');
       }
       onOpenChange(false);
@@ -138,6 +161,60 @@ export default function FlashcardFormModal({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 mt-3">
+          {!editingCard && (
+            <div className="relative">
+              <label className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>
+                Add to Deck
+              </label>
+              <button
+                type="button"
+                onClick={() => setDeckDropdownOpen(!deckDropdownOpen)}
+                className="mt-1.5 w-full rounded-2xl px-4 py-3 text-sm leading-relaxed text-left flex items-center justify-between"
+                style={inputStyle}
+              >
+                <span>{selectedDeckId ? decks.find(d => d.id === selectedDeckId)?.title || 'Custom Deck' : 'Main Collection'}</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${deckDropdownOpen ? 'rotate-180' : ''}`} style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }} />
+              </button>
+              <AnimatePresence>
+                {deckDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="absolute z-10 w-full mt-1 rounded-2xl overflow-hidden"
+                    style={{
+                      background: isDark ? 'rgba(8,8,12,0.98)' : '#fff',
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.09)'}`,
+                      boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedDeckId(null); setDeckDropdownOpen(false); }}
+                      className="w-full px-4 py-3 text-sm text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                      style={{ color: isDark ? '#fff' : '#1D1D1F' }}
+                    >
+                      Main Collection
+                    </button>
+                    {decks.map((deck) => (
+                      <button
+                        key={deck.id}
+                        type="button"
+                        onClick={() => { setSelectedDeckId(deck.id); setDeckDropdownOpen(false); }}
+                        className="w-full px-4 py-3 text-sm text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors border-t"
+                        style={{ 
+                          borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                          color: isDark ? '#fff' : '#1D1D1F'
+                        }}
+                      >
+                        {deck.title}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
           <div>
              <label className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.4)' }}>
                Term / Word

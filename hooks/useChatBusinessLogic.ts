@@ -113,12 +113,17 @@ export function useChatBusinessLogic({
     const syncSessions = async () => {
       try {
         let loaded = initialSessions;
-        if (loaded.length === 0) {
+        // Only fetch if we truly have no sessions at all (not even cached)
+        if (loaded.length === 0 && sessions.length === 0) {
           const res = await fetch('/api/chat-sessions');
           if (res.ok) {
             const data = await res.json();
             loaded = data.sessions || [];
           }
+        } else if (loaded.length === 0) {
+          // We have cached sessions, no need to block on fetch
+          setChatSessionsLoading(false);
+          return;
         }
         
         if (loaded.length > 0) {

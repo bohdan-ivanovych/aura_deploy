@@ -1,6 +1,7 @@
 import { getOrCreateUser } from '@/lib/auth/api-utils';
 import prisma from '@/lib/db/prisma';
 import LibraryClient from './LibraryClient';
+import { seedPublicDecks } from '@/lib/db/seed-public-decks';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,6 +9,14 @@ export default async function LibraryPage({ searchParams }: { searchParams: Prom
   const user = await getOrCreateUser();
   const resolvedParams = await searchParams;
   const q = resolvedParams.q || '';
+
+  // Auto-seed public decks if none exist
+  try {
+    const publicCount = await prisma.deck.count({ where: { isPublic: true } });
+    if (publicCount === 0) {
+      await seedPublicDecks();
+    }
+  } catch { /* silent — don't block page render */ }
 
   // Fetch Public Decks
   const publicDecks = await prisma.deck.findMany({

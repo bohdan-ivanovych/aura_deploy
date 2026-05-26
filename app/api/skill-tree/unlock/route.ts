@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getOrCreateUser } from '@/lib/auth/api-utils';
 import prisma from '@/lib/db/prisma';
 import { rateLimit } from '@/lib/utils/rate-limit';
+import { mapWeaknessToNodeSlug, normalizeSkillTopic, titleFromSkillTopic } from '@/lib/game/grammar-nodes';
 
 const SKILL_UNLOCK_DEPTH_BONUS = 3;
 
@@ -14,21 +15,52 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const slug = typeof body?.slug === 'string' ? body.slug.trim() : '';
+    const rawSlug = typeof body?.slug === 'string' ? body.slug.trim() : '';
+    const slug = normalizeSkillTopic(rawSlug);
     const quizScore: number = typeof body?.quizScore === 'number' ? body.quizScore : 0;
     const quizTotal: number = typeof body?.quizTotal === 'number' ? body.quizTotal : 0;
+    const title = typeof body?.title === 'string' ? body.title.trim() : titleFromSkillTopic(rawSlug);
 
-    if (!slug) {
+    if (!rawSlug || !slug) {
       return NextResponse.json({ error: 'Slug required' }, { status: 400 });
     }
 
-    const node = await prisma.skillNode.findUnique({
+    // Try to find existing node
+    let node = await prisma.skillNode.findUnique({
       where: { slug },
       include: { prerequisites: { select: { id: true } } },
     });
 
+    // If node doesn't exist, try to create it from weakness data
     if (!node) {
-      return NextResponse.json({ error: 'Skill node not found' }, { status: 404 });
+      // Check if this matches a predefined node (case-insensitive)
+      const mappedSlug = mapWeaknessToNodeSlug(slug);
+      if (mappedSlug) {
+        node = await prisma.skillNode.findUnique({
+          where: { slug: mappedSlug },
+          include: { prerequisites: { select: { id: true } } },
+        });
+      }
+
+      // If still no node, create a dynamic one
+      if (!node && title) {
+        node = await prisma.skillNode.create({
+          data: {
+            slug,
+            title,
+            description: `A grammar pattern identified in your recent conversations that needs practice.`,
+            category: 'Emerging Skills',
+            level: 1,
+            xpReward: 30,
+            isCustom: true,
+          },
+          include: { prerequisites: { select: { id: true } } },
+        });
+      }
+    }
+
+    if (!node) {
+      return NextResponse.json({ error: 'Skill node not found and could not be created' }, { status: 404 });
     }
 
     let unlockedIds = new Set<string>();

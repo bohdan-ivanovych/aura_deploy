@@ -330,14 +330,19 @@ export const ChatMessage = memo(function ChatMessage({
                   )}
 
                   {/* ОНОВЛЕНО: Блок корекції тепер має матовий фон та border, щоб не бути прозорим */}
-                  {isLastBubble && (grammarCorrection || (!tiktokNote && vocabularyNote) || (!tiktokNote && vibeNote) || tiktokNote) && (
+                  {isLastBubble && (grammarCorrection || vocabularyNote || vibeNote || tiktokNote) && (
                     <div className="mt-3 flex flex-col gap-2 relative z-[10]">
                       <div className="rounded-xl overflow-hidden backdrop-blur-xl shadow-sm" style={{ background: 'var(--surface)', backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
                         <div className="p-0.5">
-                          {grammarCorrection && <GrammarNoteCard messageId={messageId} text={grammarCorrection} weaknessIdentified={weaknessIdentified} />}
-                          {!tiktokNote && vocabularyNote && <VocabularyNoteCard messageId={messageId} text={vocabularyNote} weaknessIdentified={weaknessIdentified} />}
-                          {!tiktokNote && vibeNote && <VibeNoteCard text={vibeNote} />}
-                          {tiktokNote && <TikTokNoteCard data={tiktokNote} />}
+                          {grammarCorrection ? (
+                            <GrammarNoteCard messageId={messageId} text={grammarCorrection} weaknessIdentified={weaknessIdentified} />
+                          ) : tiktokNote ? (
+                            <TikTokNoteCard data={tiktokNote} />
+                          ) : vocabularyNote ? (
+                            <VocabularyNoteCard messageId={messageId} text={vocabularyNote} weaknessIdentified={weaknessIdentified} />
+                          ) : vibeNote ? (
+                            <VibeNoteCard text={vibeNote} />
+                          ) : null}
                         </div>
                       </div>
                     </div>

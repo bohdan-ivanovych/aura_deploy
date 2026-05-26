@@ -216,7 +216,28 @@ export default function WriteModeClient({ deckId, deckTitle, cards: initialCards
 
     if (status === 'typing') {
       if (!inputVal.trim()) return;
-      const isMatch = inputVal.trim().toLowerCase() === currentCard.back.trim().toLowerCase();
+      
+      // First check exact match
+      let isMatch = inputVal.trim().toLowerCase() === currentCard.back.trim().toLowerCase();
+      
+      // If not exact match, use LLM to check semantic correctness
+      if (!isMatch) {
+        try {
+          const res = await fetch('/api/flashcards/check-answer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userAnswer: inputVal, correctAnswer: currentCard.back }),
+          });
+          const data = await res.json();
+          if (data.isCorrect) {
+            isMatch = true;
+          }
+        } catch (err) {
+          // Fallback to exact match if LLM fails
+          console.error('LLM check failed, using exact match:', err);
+        }
+      }
+      
       setStatus(isMatch ? 'correct' : 'incorrect');
       const isFirstTry = !failedCardIds.has(currentCard.id);
 

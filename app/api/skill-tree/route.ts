@@ -112,8 +112,8 @@ export async function GET() {
       };
     });
 
-    // Calculate how many messages until next skill audit (every 10 USER messages)
-    const msgsToNextAudit = 10 - (totalUserMsgs % 10);
+    // Calculate how many messages until next skill audit (every 5 USER messages)
+    const msgsToNextAudit = 5 - (totalUserMsgs % 5);
 
     return NextResponse.json({
       nodes: result,

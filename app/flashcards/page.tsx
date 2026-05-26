@@ -26,9 +26,16 @@ export default async function FlashcardsPage() {
     })
   ]);
 
-  const mistakesDeck = decks.find(d => d.title === 'My Mistakes');
-  const customDecks = decks.filter(d => d.title !== 'My Mistakes');
-  const mistakesCount = mistakesDeck ? mistakesDeck._count.cards : 0;
+  const grammarMistakesDeck = decks.find(d => d.title === 'Grammar Mistakes');
+  const vocabMistakesDeck = decks.find(d => d.title === 'Vocabulary Mistakes');
+  // Legacy support for users who had "My Mistakes"
+  const legacyMistakesDeck = decks.find(d => d.title === 'My Mistakes');
+  
+  const customDecks = decks.filter(d => 
+    d.title !== 'Grammar Mistakes' && 
+    d.title !== 'Vocabulary Mistakes' && 
+    d.title !== 'My Mistakes'
+  );
 
   return (
     <FlashcardsDashboardClient 
@@ -37,6 +44,15 @@ export default async function FlashcardsPage() {
       mainDeckCardCount={mainDeckCardsCount} 
       starredCardCount={starredCardsCount}
       learningCount={learningCount}
+      
+      grammarMistakesCount={grammarMistakesDeck ? grammarMistakesDeck._count.cards : 0}
+      grammarMistakesDeckId={grammarMistakesDeck?.id ?? null}
+      
+      vocabMistakesCount={vocabMistakesDeck ? vocabMistakesDeck._count.cards : 0}
+      vocabMistakesDeckId={vocabMistakesDeck?.id ?? null}
+
+      legacyMistakesCount={legacyMistakesDeck ? legacyMistakesDeck._count.cards : 0}
+      legacyMistakesDeckId={legacyMistakesDeck?.id ?? null}
     />
   );
 }

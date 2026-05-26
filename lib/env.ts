@@ -4,7 +4,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   // Primary Cerebras key (Tier 1)
   CEREBRAS_API_KEY: z.string().optional().default(''),
-  CEREBRAS_MODEL: z.string().optional().default('llama3.1-8b'),
+  CEREBRAS_MODEL: z.string().optional().default('qwen-3-235b-a22b-instruct-2507'),
   // Primary Groq key (Tier 2)
   GROQ_API_KEY: z.string().min(1, 'GROQ_API_KEY is required'),
   // Additional Groq keys for fallback rotation (optional)

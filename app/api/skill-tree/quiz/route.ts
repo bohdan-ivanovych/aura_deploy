@@ -2,10 +2,88 @@ import { NextResponse } from 'next/server';
 import { getOrCreateUser } from '@/lib/auth/api-utils';
 import { rateLimit } from '@/lib/utils/rate-limit';
 import { getGroqClient } from '@/lib/ai/groq';
-import { GRAMMAR_NODES } from '@/lib/game/grammar-nodes';
+import { GRAMMAR_NODES, normalizeSkillTopic, titleFromSkillTopic } from '@/lib/game/grammar-nodes';
 import { getTheory } from '@/lib/game/skill-theory';
 
+type QuizQuestion = {
+  question: string;
+  options: string[];
+  correct: number;
+  explanation: string;
+};
+
+function fallbackQuestions(topicTitle: string): QuizQuestion[] {
+  return [
+    {
+      question: `Which sentence best shows clear and correct use of ${topicTitle}?`,
+      options: [
+        'A. I want know this thing.',
+        'B. Could you explain this point more clearly?',
+        'C. Why this is work?',
+        'D. Tell me the answer fast.',
+      ],
+      correct: 1,
+      explanation: 'A clear question uses correct word order and gives enough context.',
+    },
+    {
+      question: 'Which question is the most precise?',
+      options: [
+        'A. What about it?',
+        'B. Why?',
+        'C. Which part of my sentence sounds unnatural?',
+        'D. Is it good?',
+      ],
+      correct: 2,
+      explanation: 'Precise questions name the exact thing you want feedback on.',
+    },
+    {
+      question: 'Choose the best follow-up question.',
+      options: [
+        'A. Can you give me one example?',
+        'B. You understand?',
+        'C. Again.',
+        'D. What is all?',
+      ],
+      correct: 0,
+      explanation: 'A good follow-up asks for a specific next step, like an example.',
+    },
+    {
+      question: 'Which version is grammatically strongest?',
+      options: [
+        'A. I am not sure what does this mean.',
+        'B. I am not sure what this means.',
+        'C. I not sure what this means.',
+        'D. I am not sure what means this.',
+      ],
+      correct: 1,
+      explanation: 'In embedded questions, use statement word order: "what this means."',
+    },
+    {
+      question: 'What makes a question easier to answer?',
+      options: [
+        'A. Adding the exact problem and context.',
+        'B. Making it shorter no matter what.',
+        'C. Avoiding punctuation.',
+        'D. Asking three unrelated things at once.',
+      ],
+      correct: 0,
+      explanation: 'Context and a clear target help the other person answer usefully.',
+    },
+  ];
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error('Quiz generation timed out')), timeoutMs);
+    }),
+  ]);
+}
+
 export async function POST(req: Request) {
+  let fallbackTitle = 'This Skill';
+  let fallbackSlug = 'fallback-skill';
   try {
     const user = await getOrCreateUser();
     const allowed = await rateLimit(`quiz:${user.id}`, 10, 60_000);
@@ -17,17 +95,23 @@ export async function POST(req: Request) {
     const slug = typeof body?.slug === 'string' ? body.slug.trim() : '';
     if (!slug) return NextResponse.json({ error: 'Slug required' }, { status: 400 });
 
-    const node = GRAMMAR_NODES.find((n) => n.slug === slug);
-    if (!node) return NextResponse.json({ error: 'Node not found' }, { status: 404 });
+    const normalizedSlug = normalizeSkillTopic(slug);
+    const node = GRAMMAR_NODES.find((n) => n.slug === normalizedSlug || n.slug === slug);
+    const dynamicTitle = typeof body?.title === 'string' && body.title.trim()
+      ? body.title.trim()
+      : titleFromSkillTopic(slug);
+    const topicTitle = node?.title ?? dynamicTitle;
+    fallbackTitle = topicTitle;
+    fallbackSlug = node?.slug ?? normalizedSlug;
 
     const groq = getGroqClient();
-    const theory = getTheory(slug);
+    const theory = node ? getTheory(node.slug) : null;
     const contextRules = theory?.rules?.slice(0, 3).join('. ') ?? '';
     const contextExamples = theory?.examples?.slice(0, 3).join('. ') ?? '';
 
     const questionCount = Math.floor(Math.random() * 6) + 5;
 
-    const prompt = `Generate ${questionCount} challenging multiple-choice quiz questions to test DEEP understanding of "${node.title}" in English grammar.
+    const prompt = `Generate ${questionCount} challenging multiple-choice quiz questions to test DEEP understanding of "${topicTitle}" in English grammar and communication.
 
 ${contextRules ? `Rules: ${contextRules}` : ''}
 ${contextExamples ? `Examples: ${contextExamples}` : ''}
@@ -46,12 +130,12 @@ Each object must have this exact structure:
 
 "correct" is the index (0-3) of the correct option.`;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await withTimeout(groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2500,
       temperature: 0.7,
-    });
+    }), 18_000);
 
     const raw = completion.choices[0]?.message?.content ?? '[]';
     const jsonMatch = raw.match(/\[[\s\S]*\]/);
@@ -66,12 +150,18 @@ Each object must have this exact structure:
 
     return NextResponse.json({
       questions,
-      nodeTitle: node.title,
-      nodeSlug: slug,
+      nodeTitle: topicTitle,
+      nodeSlug: node?.slug ?? normalizedSlug,
       total: questions.length,
     });
   } catch (error) {
     console.error('Quiz generation error:', error);
-    return NextResponse.json({ error: 'Failed to generate quiz' }, { status: 500 });
+    return NextResponse.json({
+      questions: fallbackQuestions(fallbackTitle),
+      nodeTitle: fallbackTitle,
+      nodeSlug: fallbackSlug,
+      total: 5,
+      fallback: true,
+    });
   }
 }

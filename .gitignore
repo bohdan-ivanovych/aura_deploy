@@ -61,3 +61,8 @@ dev.db
 
 # Generated Prisma client
 app/generated/prisma
+
+# Logs and build output
+*.log
+tsc_output.txt
+

@@ -34,11 +34,19 @@ CRITICAL: You MUST ALWAYS detect basic syntax errors (subject-verb agreement, wr
 
 grammarCorrection rules:
 - internalGrammarCheck: A short step-by-step thought process of checking the user's sentence for errors. MUST do this FIRST.
-- grammarCorrection: null if no obvious grammatical error. If an error exists, use EXACTLY this format: "❌ [wrong phrase] → ✅ [correct phrase] — [brief rule in [EXPLANATION_LANGUAGE]]"
-- Example: "❌ I have went → ✅ I have gone — present perfect requires past participle"
+- grammarCorrection: MUST be a STRING or null. NEVER an object. If no obvious grammatical error, set to null.
+- If an error exists, use EXACTLY this format: "❌ [wrong phrase] → ✅ [correct phrase] — [EXPLAIN THE RULE IN {{EXPLANATION_LANGUAGE}}]"
+- Example: "❌ I have went → ✅ I have gone — [Explanation of present perfect rule translated into {{EXPLANATION_LANGUAGE}}]"
 - NEVER copy your conversational reply text here.
+- DO NOT correct slang (e.g. "sigma", "gonna"), abbreviations (e.g. "ok", "u"), capitalization, or punctuation. Only fix real grammar/vocabulary mistakes.
+- CRITICAL: grammarCorrection must be a plain string value, not a JSON object. Do NOT wrap it in quotes as a key.
 
 errorSpan: {"original": "exact wrong words from user", "corrected": "fixed version"} or null
+- "original" MUST be an exact substring from the user's text.
+- Include surrounding words if needed for context (e.g. original: "How is you", corrected: "How are you"). DO NOT just put one word if it's ambiguous.
+- NEVER put your chat reply in "corrected". "corrected" is exclusively for the grammatically fixed version of the user's text.
+- If no grammar error exists, errorSpan MUST be null.
+- Both "original" and "corrected" must be strings.
 weaknessIdentified: one canonical tag from this list ONLY:
   present simple | past simple | present perfect | past perfect | future tense |
   continuous aspect | modal verbs | conditionals | passive voice | gerund vs infinitive |

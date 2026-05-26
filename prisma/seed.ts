@@ -1,12 +1,45 @@
+require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
+const { FEATURED_PRESETS } = require('../config/featured-personas');
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:password@helium/heliumdb?sslmode=disable';
-const adapter = new PrismaPg({ connectionString });
+const { Pool } = require('pg');
+
+const connectionString = process.env.DIRECT_DB_URL || process.env.DATABASE_URL || 'postgresql://postgres:password@helium/heliumdb?sslmode=disable';
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log('--- Initializing Neural Core Seeding ---');
+
+  // Seed featured personas from config
+  for (const preset of FEATURED_PRESETS) {
+    const personaId = `featured-${preset.name.toLowerCase().replace(/\s+/g, '-')}`;
+    await prisma.persona.upsert({
+      where: { id: personaId },
+      update: {
+        name: preset.name,
+        description: preset.description,
+        systemPrompt: preset.systemPrompt,
+        avatarUrl: preset.image || null,
+        voiceId: preset.voiceId,
+        category: preset.category,
+        isPublic: true,
+      },
+      create: {
+        id: personaId,
+        name: preset.name,
+        description: preset.description,
+        systemPrompt: preset.systemPrompt,
+        avatarUrl: preset.image || null,
+        voiceId: preset.voiceId,
+        category: preset.category,
+        isPublic: true,
+        creatorId: null, // System personas
+      },
+    });
+  }
 
   const personas = [
     {

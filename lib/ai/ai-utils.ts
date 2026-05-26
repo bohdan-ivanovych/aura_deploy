@@ -56,6 +56,17 @@ export function validateAIResponse(response: any): any {
 
   // Nullify grammar corrections that are just "no error" messages
   let grammar = response.grammarCorrection || null;
+  
+  // Handle case where AI returns grammarCorrection as an object (e.g., {"correction text": ""})
+  if (typeof grammar === 'object' && grammar !== null) {
+    const keys = Object.keys(grammar);
+    if (keys.length > 0) {
+      grammar = keys[0]; // Extract the correction text from the object key
+    } else {
+      grammar = null;
+    }
+  }
+  
   if (typeof grammar === 'string') {
     const lower = grammar.toLowerCase().trim();
     if (lower.startsWith('none') || lower.startsWith('no error') || lower.startsWith('no grammar') || lower.startsWith('no correction')) {

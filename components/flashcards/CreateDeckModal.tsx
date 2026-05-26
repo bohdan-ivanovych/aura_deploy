@@ -38,6 +38,9 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
   const [termSeparator, setTermSeparator] = useState('\\t');
   const [cardSeparator, setCardSeparator] = useState('\\n');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [aiTopic, setAiTopic] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [showAiPanel, setShowAiPanel] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Prevent background scroll
@@ -55,6 +58,8 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
       setCards([createEmptyCard(), createEmptyCard()]);
       setShowImport(false);
       setImportText('');
+      setAiTopic('');
+      setShowAiPanel(false);
     }
   }, [isOpen]);
 
@@ -114,6 +119,38 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
     setShowImport(false);
     setImportText('');
     toast.success(`${parsed.length} cards imported`);
+  };
+
+  const handleAiGenerate = async () => {
+    if (!aiTopic.trim() || isGenerating) return;
+    setIsGenerating(true);
+    try {
+      const res = await fetch('/api/flashcards/ai-deck', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: aiTopic.trim(), count: 12 }),
+      });
+      if (!res.ok) throw new Error('Failed to generate');
+      const data = await res.json();
+      if (data.cards && data.cards.length > 0) {
+        const generated: CardEntry[] = data.cards.map((c: { front: string; back: string }) => ({
+          id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          front: c.front,
+          back: c.back,
+        }));
+        setCards(generated);
+        if (!title.trim()) setTitle(aiTopic.trim());
+        setShowAiPanel(false);
+        toast.success(`${generated.length} AI cards generated!`);
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }));
+      } else {
+        toast.error('AI returned no cards. Try a different topic.');
+      }
+    } catch {
+      toast.error('Failed to generate cards. Try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const filledCards = cards.filter(c => c.front.trim() && c.back.trim());
@@ -278,9 +315,24 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
 
             {/* Toolbar */}
             <div className="flex items-center gap-2">
+              {/* AI Generate Button */}
               <motion.button
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setShowImport(!showImport)}
+                onClick={() => { setShowAiPanel(!showAiPanel); setShowImport(false); }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors"
+                style={{
+                  background: showAiPanel ? 'linear-gradient(135deg, rgba(0,212,212,0.15), rgba(124,58,237,0.15))' : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
+                  border: `1px solid ${showAiPanel ? 'rgba(0,212,212,0.4)' : isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
+                  color: showAiPanel ? '#00d4d4' : (isDark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)'),
+                }}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                AI Generate
+              </motion.button>
+
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => { setShowImport(!showImport); setShowAiPanel(false); }}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition-colors"
                 style={{
                   background: showImport ? (isDark ? 'rgba(0,212,212,0.12)' : 'rgba(0,212,212,0.08)') : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)'),
@@ -298,6 +350,56 @@ export function CreateDeckModal({ isOpen, onClose, onSuccess }: CreateDeckModalP
                 {filledCards.length} / {cards.length} cards filled
               </span>
             </div>
+
+            {/* AI Generate Panel */}
+            <AnimatePresence>
+              {showAiPanel && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="overflow-hidden"
+                >
+                  <div style={{ ...glassCard, padding: '20px 24px', background: isDark ? 'rgba(0,212,212,0.04)' : 'rgba(0,212,212,0.03)', borderColor: 'rgba(0,212,212,0.2)' }} className="space-y-3">
+                    <span className="text-[11px] font-black uppercase tracking-widest block" style={{ color: '#00d4d4' }}>
+                      ✨ AI Deck Generator
+                    </span>
+                    <p className="text-[11px]" style={{ color: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)' }}>
+                      Enter a topic and AI will generate cards translated into your native language.
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={aiTopic}
+                        onChange={e => setAiTopic(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAiGenerate()}
+                        placeholder="e.g. Space exploration, Cooking verbs, IT slang..."
+                        className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none"
+                        style={{
+                          background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
+                          border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
+                          color: isDark ? '#fff' : '#1D1D1F',
+                        }}
+                      />
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleAiGenerate}
+                        disabled={!aiTopic.trim() || isGenerating}
+                        className="px-5 py-2.5 rounded-xl text-[11px] font-black text-black disabled:opacity-40 flex items-center gap-1.5"
+                        style={{ background: 'linear-gradient(135deg, #00d4d4, #7c3aed)', minWidth: '100px' }}
+                      >
+                        {isGenerating ? (
+                          <><FileText className="w-3.5 h-3.5 animate-spin" /> Generating...</>
+                        ) : (
+                          <><Sparkles className="w-3.5 h-3.5" /> Generate</>
+                        )}
+                      </motion.button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Import Panel */}
             <AnimatePresence>

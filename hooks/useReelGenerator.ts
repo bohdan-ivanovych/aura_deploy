@@ -530,6 +530,7 @@ export function useReelGenerator({ messages, persona, diveDepth }: Props) {
           if (msg.wordsShown === 0) {
             const wordCount = msg.words.length;
             let wps = 3; // Default words per second fallback
+            let srcNode: AudioBufferSourceNode | null = null;
             
             if (buf) {
               const src = audioCtx.createBufferSource();
@@ -538,6 +539,7 @@ export function useReelGenerator({ messages, persona, diveDepth }: Props) {
               src.connect(audioCtx.destination);
               src.start();
               wps = wordCount / buf.duration;
+              srcNode = src;
             } else {
               // Web Speech API fallback for actual playback, but not recorded in reel audio track
               if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -555,7 +557,11 @@ export function useReelGenerator({ messages, persona, diveDepth }: Props) {
               }
             }, 1000 / wps);
             msg.wordsShown = 1;
-            await new Promise(r => src.addEventListener('ended', r));
+            if (srcNode) {
+              await new Promise(r => srcNode.addEventListener('ended', r));
+            } else {
+              await new Promise(r => setTimeout(r, (wordCount / wps) * 1000));
+            }
             clearInterval(revealInterval);
             msg.wordsShown = wordCount;
             await new Promise(r => setTimeout(r, 600));

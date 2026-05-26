@@ -10,6 +10,7 @@ import {
 import { toast } from 'sonner';
 import { getTheory } from '@/lib/game/skill-theory';
 import { SkillQuizModal } from '@/components/skill-tree/SkillQuizModal';
+import { normalizeSkillTopic, resolveSkillTopic, titleFromSkillTopic } from '@/lib/game/grammar-nodes';
 
 type SkillNode = {
   id: string;
@@ -51,7 +52,7 @@ function SkillTreeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusedTopic = searchParams.get('topic');
-  const didFocusTopic = useRef(false);
+  const focusedTopicRef = useRef<string | null>(null);
 
   const [nodes, setNodes] = useState<SkillNode[]>([]);
   const [userDepth, setUserDepth] = useState(0);
@@ -97,9 +98,14 @@ function SkillTreeContent() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   useEffect(() => {
-    if (focusedTopic && !didFocusTopic.current && nodes.length > 0) {
-      didFocusTopic.current = true;
-      const lc = focusedTopic.toLowerCase().trim();
+    if (focusedTopic !== focusedTopicRef.current) {
+      focusedTopicRef.current = null;
+    }
+
+    if (focusedTopic && focusedTopicRef.current !== focusedTopic && nodes.length > 0) {
+      focusedTopicRef.current = focusedTopic;
+      const resolved = resolveSkillTopic(focusedTopic);
+      const lc = resolved?.slug ?? normalizeSkillTopic(focusedTopic);
 
       // Pass 1 — exact slug match
       let node = nodes.find(n => n.slug === lc || n.slug === lc.replace(/[^a-z0-9]+/g, '-'));
@@ -127,14 +133,12 @@ function SkillTreeContent() {
         setExpandedCategories(prev => new Set([...prev, node!.category]));
       } else {
         // Custom / dynamic topic — create a synthetic node
-        const syntheticId = `synth-${lc}`;
-        const prettyTitle = focusedTopic
-          .split(/[-_\s]+/)
-          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ');
-        setNodes(prev => [...prev, {
+        const slug = lc || normalizeSkillTopic(focusedTopic);
+        const syntheticId = `synth-${slug}`;
+        const prettyTitle = resolved?.title ?? titleFromSkillTopic(focusedTopic);
+        setNodes(prev => prev.some(n => n.id === syntheticId || n.slug === slug) ? prev : [...prev, {
           id: syntheticId,
-          slug: lc.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+          slug,
           title: prettyTitle,
           description: `A grammar pattern identified in your recent conversations that needs practice.`,
           category: 'Emerging Skills',
@@ -152,7 +156,7 @@ function SkillTreeContent() {
         setExpandedCategories(prev => new Set([...prev, 'Emerging Skills']));
       }
     }
-  }, [focusedTopic, nodes.length]);
+  }, [focusedTopic, nodes]);
 
   const categories = useMemo(() => {
     const src = selectedId
@@ -166,13 +170,13 @@ function SkillTreeContent() {
     return cats;
   }, [nodes, selectedId]);
 
-  const handleUnlock = useCallback(async (nodeSlug: string, quizScore?: number, quizTotal?: number) => {
+  const handleUnlock = useCallback(async (nodeSlug: string, quizScore?: number, quizTotal?: number, title?: string) => {
     setUnlockingId(nodeSlug);
     try {
       const res = await fetch('/api/skill-tree/unlock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: nodeSlug, quizScore, quizTotal }),
+        body: JSON.stringify({ slug: nodeSlug, quizScore, quizTotal, title }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to unlock skill');
@@ -653,7 +657,7 @@ function SkillTreeContent() {
           onClose={() => setQuizOpen(false)}
           onPassed={(score, total) => {
             setQuizOpen(false);
-            void handleUnlock(quizNode.slug, score, total);
+            void handleUnlock(quizNode.slug, score, total, quizNode.title);
           }}
         />
       )}

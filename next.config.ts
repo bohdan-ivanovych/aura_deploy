@@ -6,6 +6,10 @@ const isDev = process.env.NODE_ENV !== 'production';
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  allowedDevOrigins: isDev
+    ? ['localhost:5000', '127.0.0.1:5000', '192.168.31.28:5000', '192.168.31.28']
+    : [],
+
   serverExternalPackages: ['pg', '@prisma/client', 'prisma', 'web-push'],
 
   experimental: {

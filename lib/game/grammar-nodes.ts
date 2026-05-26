@@ -736,3 +736,42 @@ export function mapWeaknessToNodeSlug(weakness: string): string | null {
   // No static match found — caller should treat the raw weakness as a custom/dynamic slug
   return null;
 }
+
+export function normalizeSkillTopic(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/['"]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+export function titleFromSkillTopic(input: string): string {
+  const source = input.trim() || 'Emerging Skill';
+  return source
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+export function resolveSkillTopic(input: string): { slug: string; title: string; isKnown: boolean } | null {
+  if (!input || typeof input !== 'string') return null;
+
+  const mapped = mapWeaknessToNodeSlug(input);
+  if (mapped) {
+    const node = GRAMMAR_NODES.find((n) => n.slug === mapped);
+    return { slug: mapped, title: node?.title ?? titleFromSkillTopic(mapped), isKnown: true };
+  }
+
+  const normalized = normalizeSkillTopic(input);
+  if (!normalized) return null;
+
+  const direct = GRAMMAR_NODES.find((n) => n.slug === normalized);
+  if (direct) return { slug: direct.slug, title: direct.title, isKnown: true };
+
+  return { slug: normalized, title: titleFromSkillTopic(input), isKnown: false };
+}

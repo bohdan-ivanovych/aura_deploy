@@ -1,24 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Edge Middleware — runs before every request.
+ * Edge proxy runs before every request.
  *
  * Responsibility: ensure every visitor has a `user-id` cookie set.
- * Doing this here (Edge) is the only safe place to *write* a cookie
- * that Server Components can then *read* — Server Components themselves
- * cannot write cookies (Next.js restriction).
+ * Doing this here is the only safe place to write a cookie that Server
+ * Components can then read on the first request.
  */
-export function middleware(request: NextRequest) {
-  const response = NextResponse.next();
-
-  // If user already has an ID cookie, do nothing.
+export function proxy(request: NextRequest) {
   if (request.cookies.get('user-id')?.value) {
-    return response;
+    return NextResponse.next();
   }
 
-  // Generate a new persistent anonymous user ID.
   const userId = crypto.randomUUID();
   const oneYear = 60 * 60 * 24 * 365;
+
+  const requestHeaders = new Headers(request.headers);
+  const existingCookie = requestHeaders.get('cookie') || '';
+  const newCookie = existingCookie
+    ? `${existingCookie}; user-id=${userId}`
+    : `user-id=${userId}`;
+  requestHeaders.set('cookie', newCookie);
+
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  });
 
   response.cookies.set('user-id', userId, {
     httpOnly: true,
@@ -32,7 +40,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on all routes except static assets, _next internals, and favicons.
   matcher: [
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|woff2?|ttf|eot)$).*)',
   ],

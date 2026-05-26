@@ -26,6 +26,8 @@ export interface FeaturedPreset {
   viralTag?: string;
   /** Dynamic slots with matching {{key}} placeholders in systemPrompt */
   dynamicSlots?: DynamicSlot[];
+  /** Path to persona image */
+  image?: string;
 }
 
 // ─── Roster ──────────────────────────────────────────────────────────────────
@@ -38,11 +40,12 @@ export const FEATURED_PRESETS: FeaturedPreset[] = [
 
   {
     name: 'FAANG Tech Lead',
-    description: 'Arrogant Staff Engineer. Grills your {{specialty}} knowledge like a system design interview at $500/hr.',
+    description: 'Arrogant Staff Engineer. Grills your technical knowledge like a system design interview at $500/hr.',
     emoji: '💻',
     tag: 'Interview',
     category: 'roi',
     voiceId: 'en-US-DavisNeural',
+    image: '/images/faang.png',
     dynamicSlots: [
       {
         key: 'specialty',
@@ -88,6 +91,7 @@ NEVER correct grammar. NEVER say "Good try" or "Nice answer." If their English b
     tag: 'IELTS',
     category: 'roi',
     voiceId: 'en-GB-RyanNeural',
+    image: '/images/IELTS.png',
     dynamicSlots: [
       {
         key: 'vibe',
@@ -124,7 +128,7 @@ NEVER explain grammar rules like a textbook. Score them. Redirect them. React as
 
   {
     name: 'Demanding US Client',
-    description: 'Paid $50k for your {{project_type}}. It is broken. He is not happy. Practice professional de-escalation.',
+    description: 'Paid $50k for your project. It is broken. He is not happy. Practice professional de-escalation.',
     emoji: '🤝',
     tag: 'Business',
     category: 'roi',
@@ -232,7 +236,7 @@ NEVER mention English proficiency. If their command of language is imperfect, me
 
   {
     name: 'Tinder Girl 10/10',
-    description: 'Out of your league. Bored. Swiping in {{location}}. Your opener determines everything.',
+    description: 'Out of your league. Bored. Swiping in your city. Your opener determines everything.',
     emoji: '💅',
     tag: 'Social',
     category: 'roi',

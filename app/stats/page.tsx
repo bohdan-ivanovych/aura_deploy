@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { BarChart2, Flame, Target, MessageSquare, CheckCircle2, Circle, ChevronDown } from 'lucide-react';
 import { getLevelInfo } from '@/lib/game/levels';
 import { buildNodes, TopicNode } from '@/lib/stats-helpers';
+import { resolveSkillTopic } from '@/lib/game/grammar-nodes';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { ErrorScreen } from '@/components/ui/ErrorScreen';
@@ -15,6 +16,10 @@ import { LanguageSkills } from '@/components/dashboard/widgets/LanguageSkills';
 
 const SkillRadarHUD = dynamic(
   () => import('@/components/stats/SkillRadarHUD').then(m => ({ default: m.SkillRadarHUD })),
+  { ssr: false }
+);
+const Radar = dynamic(
+  () => import('@/components/chat/Radar').then(m => ({ default: m.Radar })),
   { ssr: false }
 );
 const BubblePhysicsLayer = dynamic(
@@ -55,17 +60,8 @@ export default function StatsPage() {
   }, [stats]);
 
   const handleSelectNode = useCallback((node: TopicNode) => {
-    // Map node label to a grammar node slug if possible
-    const { GRAMMAR_NODES } = require('@/lib/game/grammar-nodes');
-    const match = GRAMMAR_NODES.find((g: any) => 
-      g.title.toLowerCase() === node.label.toLowerCase() ||
-      g.keywords.some((k: string) => k.toLowerCase() === node.label.toLowerCase())
-    );
-    if (match) {
-      router.push(`/skill-tree?topic=${match.slug}`);
-    } else {
-      router.push(`/skill-tree?topic=${encodeURIComponent(node.label)}`);
-    }
+    const topic = resolveSkillTopic(node.label);
+    router.push(`/skill-tree?topic=${encodeURIComponent(topic?.slug ?? node.label)}`);
   }, [router]);
 
   const levelInfo = useMemo(() => getLevelInfo(stats?.diveDepth ?? 0), [stats?.diveDepth]);
@@ -168,69 +164,74 @@ export default function StatsPage() {
           {/* ─── Left column: scrollable content ─── */}
           <div className="flex flex-col overflow-y-auto overflow-x-hidden pb-[160px] md:pb-6 md:w-[380px] md:shrink-0 md:border-r md:border-white/5">
 
-          {/* ── Compact header ── */}
-          <motion.div
-            initial={{ opacity: 0, y: -12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="pb-0 px-5 flex items-center justify-between shrink-0"
-            style={{ paddingTop: 'max(2rem, calc(1rem + env(safe-area-inset-top, 0px)))' }}
-          >
-            <div className="flex items-center gap-2">
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', boxShadow: '0 0 8px rgba(59,130,246,0.7)' }} />
-              <span style={{ fontFamily: SF, fontSize: 11, fontWeight: 600, letterSpacing: '0.2em', color: 'rgba(150,190,255,0.55)', textTransform: 'uppercase' }}>
-                Depth Profile
-              </span>
-            </div>
-            <span style={{ fontFamily: SF, fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, background: 'linear-gradient(135deg, #FFFFFF 30%, rgba(160,200,255,0.85) 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
-              {depth === 0 ? 'Surface' : (isAbyss ? 'Abyss' : 'Diving')}
-            </span>
-          </motion.div>
-
-
-
-          {/* ── Language Skills ── */}
-          <div className="mx-5 shrink-0 mb-2 mt-3">
-            <LanguageSkills stats={stats} isDark={isDark} />
-          </div>
-
-          {/* ── CTA ── */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
-            className="mx-5 mt-4 mb-4 shrink-0"
-          >
-            <div onClick={() => router.push('/chat?picker=true')} className="cursor-pointer">
-              <motion.div
-                className="relative flex items-center justify-center gap-2.5 overflow-hidden cursor-pointer"
-                style={{ height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #1D4ED8 0%, #2563EB 40%, #7C3AED 100%)', boxShadow: '0 4px 20px rgba(37,99,235,0.4), 0 1px 0 rgba(255,255,255,0.12) inset' }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-              >
-                <motion.div className="absolute inset-0 pointer-events-none"
-                  style={{ background: 'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)', borderRadius: 14 }}
-                  animate={{ x: ['-120%', '220%'] }}
-                  transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 3.5, ease: 'easeInOut' }} />
-                <MessageSquare className="w-4 h-4 shrink-0" style={{ color: 'rgba(255,255,255,0.9)' }} />
-                <span style={{ fontFamily: SF, fontSize: 14, fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
-                  Break the Ice
+            {/* ── Compact header ── */}
+            <motion.div
+              initial={{ opacity: 0, y: -12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="pb-0 px-5 flex items-center justify-between shrink-0"
+              style={{ paddingTop: 'max(2rem, calc(1rem + env(safe-area-inset-top, 0px)))' }}
+            >
+              <div className="flex items-center gap-2">
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', boxShadow: '0 0 8px rgba(59,130,246,0.7)' }} />
+                <span style={{ fontFamily: SF, fontSize: 11, fontWeight: 600, letterSpacing: '0.2em', color: 'rgba(150,190,255,0.55)', textTransform: 'uppercase' }}>
+                  Depth Profile
                 </span>
-              </motion.div>
-            </div>
-          </motion.div>
+              </div>
+              <span style={{ fontFamily: SF, fontSize: 22, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, background: 'linear-gradient(135deg, #FFFFFF 30%, rgba(160,200,255,0.85) 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
+                {depth === 0 ? 'Surface' : (isAbyss ? 'Abyss' : 'Diving')}
+              </span>
+            </motion.div>
 
-          {/* Mobile-only: iceberg preview at bottom */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5, duration: 1.2 }}
-            className="md:hidden shrink-0 w-full h-[250px] min-h-[250px]"
-            style={{ marginTop: 16 }}
-          >
-            <IcebergIllustration progress={depth / 15} />
-          </motion.div>
+
+
+            {/* ── Language Skills ── */}
+            <div className="mx-5 shrink-0 mb-2 mt-3">
+              <LanguageSkills stats={stats} isDark={isDark} />
+            </div>
+
+            {/* ── Radar (mobile only) ── */}
+            <div className="mx-5 shrink-0 mb-3 mt-8 md:hidden">
+              <Radar />
+            </div>
+
+            {/* ── CTA ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3, duration: 0.55, ease: [0.25, 0.46, 0.45, 0.94] }}
+              className="mx-5 mt-4 mb-4 shrink-0"
+            >
+              <div onClick={() => router.push('/chat?picker=true')} className="cursor-pointer">
+                <motion.div
+                  className="relative flex items-center justify-center gap-2.5 overflow-hidden cursor-pointer"
+                  style={{ height: 48, borderRadius: 14, background: 'linear-gradient(135deg, #1D4ED8 0%, #2563EB 40%, #7C3AED 100%)', boxShadow: '0 4px 20px rgba(37,99,235,0.4), 0 1px 0 rgba(255,255,255,0.12) inset' }}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                >
+                  <motion.div className="absolute inset-0 pointer-events-none"
+                    style={{ background: 'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%)', borderRadius: 14 }}
+                    animate={{ x: ['-120%', '220%'] }}
+                    transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 3.5, ease: 'easeInOut' }} />
+                  <MessageSquare className="w-4 h-4 shrink-0" style={{ color: 'rgba(255,255,255,0.9)' }} />
+                  <span style={{ fontFamily: SF, fontSize: 14, fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.01em' }}>
+                    Break the Ice
+                  </span>
+                </motion.div>
+              </div>
+            </motion.div>
+
+            {/* Mobile-only: iceberg preview at bottom */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5, duration: 1.2 }}
+              className="md:hidden shrink-0 w-full h-[250px] min-h-[250px]"
+              style={{ marginTop: 16 }}
+            >
+              <IcebergIllustration progress={depth / 15} />
+            </motion.div>
 
           </div>{/* end left column */}
 
@@ -290,9 +291,9 @@ export default function StatsPage() {
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2"
                 style={{
-                   background: 'rgba(0,6,18,0.85)',
-                   border: `1px solid ${item.color}18`,
-                   borderRadius: 12,
+                  background: 'rgba(0,6,18,0.85)',
+                  border: `1px solid ${item.color}18`,
+                  borderRadius: 12,
                   padding: isMobile ? '6px 10px' : '7px 12px',
                   minWidth: isMobile ? 90 : 112,
                   boxShadow: `inset 0 1px 0 ${item.color}08`,

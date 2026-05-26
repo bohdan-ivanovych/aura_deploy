@@ -169,8 +169,6 @@ export default function SettingsPage() {
   const [referralCode, setReferralCode] = useState('');
   const [stealthInjectVocab, setStealthInjectVocab] = useState(false);
   const [stealthInjectGrammar, setStealthInjectGrammar] = useState(false);
-  const [email, setEmail] = useState('');
-  const [emailError, setEmailError] = useState('');
   const [loading, setLoading] = useState(true);
   const [geoDetecting, setGeoDetecting] = useState(false);
   const [geoDetected, setGeoDetected] = useState<string | null>(null);
@@ -233,10 +231,6 @@ export default function SettingsPage() {
           setReferralCode(data.user.referralCode || '');
           setStealthInjectVocab(data.user.stealthInjectVocab ?? false);
           setStealthInjectGrammar(data.user.stealthInjectGrammar ?? false);
-          
-          if (data.user.email && !data.user.email.endsWith('@aura.os')) {
-            setEmail(data.user.email);
-          }
         }
       } catch {}
       finally { setLoading(false); }
@@ -271,22 +265,19 @@ export default function SettingsPage() {
             const res = await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nativeLanguage, cardPreference, targetAccent, name: displayName, username, email, stealthInjectVocab, stealthInjectGrammar }),
+            body: JSON.stringify({ nativeLanguage, cardPreference, targetAccent, name: displayName, username, stealthInjectVocab, stealthInjectGrammar }),
           });
           const data = await res.json();
           if (res.status === 409) {
             setUsernameError(data.error || 'Username already taken.');
-          } else if (res.status === 400 && data.error?.includes('email')) {
-            setEmailError(data.error);
           } else {
             setUsernameError('');
-            setEmailError('');
           }
         } catch {}
       }, 600);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nativeLanguage, cardPreference, targetAccent, displayName, username, email, stealthInjectVocab, stealthInjectGrammar, loading]);
+  }, [nativeLanguage, cardPreference, targetAccent, displayName, username, stealthInjectVocab, stealthInjectGrammar, loading]);
 
   useEffect(() => () => { if (debouncedSave.current) clearTimeout(debouncedSave.current); }, []);
 
@@ -419,35 +410,6 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {/* Email Protection */}
-              <div className="px-5 py-4 bg-amber-500/5" style={{ borderTop: `1px solid ${sectionBorderColor}` }}>
-                <label className="block text-sm font-semibold mb-1.5 text-amber-500">
-                  Account Protection (Email)
-                </label>
-                <p className="text-xs mb-3" style={{ color: subColor }}>Link an email so you don't lose your progress if you clear cookies.</p>
-                <div className="relative">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => {
-                      setEmailError('');
-                      setEmail(e.target.value.toLowerCase().trim());
-                    }}
-                    placeholder="your@email.com"
-                    className="w-full rounded-[14px] px-4 py-2.5 text-sm font-medium outline-none transition-all"
-                    style={{
-                      background: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
-                      border: `1px solid ${emailError ? 'rgba(248,113,113,0.6)' : isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.09)'}`,
-                      color: headingColor,
-                    }}
-                    onFocus={e => { e.target.style.borderColor = emailError ? 'rgba(248,113,113,0.6)' : accent; }}
-                    onBlur={e => { e.target.style.borderColor = emailError ? 'rgba(248,113,113,0.6)' : isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.09)'; }}
-                  />
-                </div>
-                {emailError && (
-                  <p className="text-[11px] mt-1.5 font-semibold" style={{ color: 'rgba(248,113,113,0.9)' }}>{emailError}</p>
-                )}
-              </div>
             </motion.section>
 
             {/* ── Preferences ─────────────────────────────────── */}

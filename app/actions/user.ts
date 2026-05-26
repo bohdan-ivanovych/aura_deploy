@@ -27,12 +27,12 @@ function detectNativeLanguage(acceptLanguage: string | null): string {
 
 export async function getCurrentUser(refCode?: string) {
   const cookieStore = await cookies();
-  // The middleware (middleware.ts) guarantees this cookie is set before
+  // The edge proxy (proxy.ts) guarantees this cookie is set before
   // any Server Component renders, so we only need to read it here.
   let userId = cookieStore.get('user-id')?.value;
 
-  // Fallback: should never happen in production (middleware covers it),
-  // but generates a stable-enough ID for local dev without middleware.
+  // Fallback: should never happen in production (proxy covers it),
+  // but generates a stable-enough ID for local dev without the proxy.
   if (!userId) {
     userId = crypto.randomUUID();
   }

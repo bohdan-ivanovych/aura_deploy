@@ -305,9 +305,9 @@ export function SkillRadarHUD({
   const subLabelColor   = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.25)';
   const trackBg         = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
 
-  // On mobile sit just above the nav bar (bottom nav ~56px + 4px gap)
-  // On desktop sit 6px from bottom
-  const bottomOffset = isMobile ? '68px' : '24px';
+  // Nav bar: height 68px, bottom: max(16px, env(safe-area-inset-bottom, 16px))
+  // So total clearance needed = 68 + 16 + 12px gap = 96px + safe area
+  const bottomOffset = isMobile ? 'calc(96px + env(safe-area-inset-bottom, 0px))' : '24px';
 
   return (
     <motion.div

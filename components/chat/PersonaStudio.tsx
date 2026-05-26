@@ -126,8 +126,9 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
         ? raw.join(' & ')
         : (raw as string) ?? '';
     }
-    void handleLaunchFeatured(slotPreset, resolved);
-    setSlotPreset(null);
+    void handleLaunchFeatured(slotPreset, resolved).catch(() => {
+      setSlotPreset(null);
+    });
   };
 
   const handleLaunchFeatured = async (preset: FeaturedPreset, slots: Record<string, string>) => {
@@ -140,7 +141,19 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
         (t) => t.name.toLowerCase() === preset.name.toLowerCase(),
       );
       if (cached) {
+        // Update avatarUrl if the persona exists but doesn't have one or has a different one
+        if (!cached.avatarUrl && preset.image) {
+          await fetch(`/api/personas/${cached.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ avatarUrl: preset.image }),
+          });
+          // Update cache
+          await globalMutate(SWR_KEY, (prev: Persona[] = []) => 
+            prev.map(p => p.id === cached.id ? { ...p, avatarUrl: preset.image } : p), false);
+        }
         onInitialize(cached.id);
+        setSaving(false);
         return;
       }
 
@@ -152,7 +165,7 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
           description:  preset.description,
           systemPrompt: resolvedPrompt,
           voiceId:      preset.voiceId,
-          avatarUrl:    null,
+          avatarUrl:    preset.image || null,
         }),
       });
       const persona = await res.json();
@@ -417,8 +430,13 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 40, scale: 0.98 }}
       transition={{ type: 'spring', stiffness: 360, damping: 32 }}
-      className="absolute inset-0 flex flex-col p-6 md:p-8 overflow-y-auto no-scrollbar liquid-glass-strong"
-      style={{ zIndex: 10 }}
+      className="absolute inset-0 flex flex-col px-6 pt-6 pb-[calc(48px+env(safe-area-inset-bottom))] md:p-8 overflow-y-auto no-scrollbar"
+      style={{
+        zIndex: 10,
+        background: isDark ? 'rgba(10,12,20,0.98)' : 'rgba(255,255,255,0.98)',
+        backdropFilter: 'blur(40px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(40px) saturate(200%)',
+      }}
     >
       {/* Back button */}
       <button
@@ -683,7 +701,7 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
             onDragEnd={(_, { offset, velocity }) => {
               if (offset.y > 150 || velocity.y > 500) onClose();
             }}
-            className="relative w-full md:max-w-6xl md:h-[85vh] rounded-t-[40px] md:rounded-[40px] overflow-hidden flex flex-col z-10 mx-auto"
+            className="relative w-full h-[92dvh] md:max-w-6xl md:h-[85vh] rounded-t-[40px] md:rounded-[40px] overflow-hidden flex flex-col z-10 mx-auto"
             style={{
               background: isDark ? 'rgba(10,12,20,0.88)' : 'rgba(255,255,255,0.90)',
               backdropFilter: 'blur(40px) saturate(200%)',
@@ -855,16 +873,32 @@ function FeaturedCard({
 
       <div className="relative z-10 space-y-2.5">
         <div className="flex items-center gap-2">
-          {/* Emoji avatar */}
-          <div
-            className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl shrink-0"
-            style={{
-              background: isDark ? 'rgba(34,211,238,0.1)' : 'rgba(8,145,178,0.08)',
-              border: `1px solid ${isDark ? 'rgba(34,211,238,0.2)' : 'rgba(8,145,178,0.18)'}`,
-            }}
-          >
-            {preset.emoji}
-          </div>
+          {/* Image or emoji avatar */}
+          {preset.image ? (
+            <div
+              className="w-10 h-10 rounded-2xl overflow-hidden shrink-0"
+              style={{
+                background: isDark ? 'rgba(34,211,238,0.1)' : 'rgba(8,145,178,0.08)',
+                border: `1px solid ${isDark ? 'rgba(34,211,238,0.2)' : 'rgba(8,145,178,0.18)'}`,
+              }}
+            >
+              <img
+                src={preset.image}
+                alt={preset.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ) : (
+            <div
+              className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl shrink-0"
+              style={{
+                background: isDark ? 'rgba(34,211,238,0.1)' : 'rgba(8,145,178,0.08)',
+                border: `1px solid ${isDark ? 'rgba(34,211,238,0.2)' : 'rgba(8,145,178,0.18)'}`,
+              }}
+            >
+              {preset.emoji}
+            </div>
+          )}
 
 
 

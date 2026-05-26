@@ -59,6 +59,18 @@ interface PlatformMeta {
 
 const MAX_VIDEO_SIZE = 15 * 1024 * 1024; // 15 MB
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 12_000;
+const METADATA_TIMEOUT_MS = 7_000;
+const TRANSCRIPTION_TIMEOUT_MS = 12_000;
+const VISION_TIMEOUT_MS = 8_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    }),
+  ]);
+}
 
 // ─── Platform Adapters ────────────────────────────────────────────────────────
 
@@ -67,7 +79,7 @@ const MEDIA_DOWNLOAD_TIMEOUT_MS = 12_000;
  */
 async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
   try {
-    const info = await ytDlp.getVideoInfo(url);
+    const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'TikTok metadata');
     // Prefer best audio format if available, otherwise fallback to general url
     const bestAudio = info.formats?.filter((f: any) => f.acodec !== 'none')?.sort((a: any, b: any) => (b.tbr || 0) - (a.tbr || 0))[0];
 
@@ -104,7 +116,7 @@ async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promi
  */
 async function fetchReelsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta & { _noContext?: boolean }> {
   try {
-    const info = await ytDlp.getVideoInfo(url);
+    const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'Reels metadata');
     const bestAudio = info.formats?.filter((f: any) => f.acodec !== 'none')?.sort((a: any, b: any) => (b.tbr || 0) - (a.tbr || 0))[0];
 
     return {
@@ -146,12 +158,12 @@ async function runTranscriptionPipeline(
         const groqFile = new File([arrayBuffer], 'video.mp4', { type: 'video/mp4' });
         const groq = getGroqClient();
 
-        const transcription = await groq.audio.transcriptions.create({
+        const transcription = await withTimeout(groq.audio.transcriptions.create({
           file: groqFile,
           model: 'whisper-large-v3-turbo',
           response_format: 'json',
           temperature: 0.0,
-        });
+        }), TRANSCRIPTION_TIMEOUT_MS, 'Whisper transcription');
 
         if (transcription.text?.trim().length > 0) {
           result.transcription = transcription.text.trim();
@@ -175,7 +187,7 @@ async function runTranscriptionPipeline(
       const coverUrl = meta.coverUrl;
       console.log(`[VideoProcessor:${result.platform}] Running Vision API on thumbnail...`);
 
-      const { text } = await generateText({
+      const { text } = await withTimeout(generateText({
         model: googleProvider('gemini-2.0-flash'),
         messages: [
           {
@@ -190,7 +202,7 @@ async function runTranscriptionPipeline(
           },
         ],
         temperature: 0.4,
-      });
+      }), VISION_TIMEOUT_MS, 'Thumbnail vision');
 
       if (text?.trim()) {
         result.visionAnalysis = text.trim();

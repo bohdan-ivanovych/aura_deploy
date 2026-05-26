@@ -281,6 +281,7 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
     }
     handleSendMessage(text, selectedSessionId, replyTo, shortVideoPlatform === 'tiktok', !!shortVideoPlatform, shortVideoPlatform || undefined).finally(() => {
       setIsWatching(false);
+      window.dispatchEvent(new Event('quest-progress-update'));
     });
   }, [selectedSessionId, replyTo, handleSendMessage]);
 

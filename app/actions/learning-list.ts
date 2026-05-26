@@ -10,6 +10,7 @@ export async function addCallGrammarToLearningList(
   correction: string,
   tip: string,
   sessionId: string,
+  deckTitle: string = 'Grammar Mistakes'
 ) {
   const user = await getOrCreateUser();
 
@@ -39,17 +40,17 @@ Respond ONLY with valid JSON matching these 5 keys.`;
       temperature: 0.3,
     });
 
-    // 1. Get or Create "My Mistakes" Deck
+    // 1. Get or Create Deck
     let mistakesDeck = await prisma.deck.findFirst({
-      where: { userId: user.id, title: 'My Mistakes' },
+      where: { userId: user.id, title: deckTitle },
     });
 
     if (!mistakesDeck) {
       mistakesDeck = await prisma.deck.create({
         data: {
           userId: user.id,
-          title: 'My Mistakes',
-          description: 'Auto-generated trimodal flashcards from your conversation mistakes.',
+          title: deckTitle,
+          description: `Auto-generated trimodal flashcards from your conversation ${deckTitle.toLowerCase()}.`,
         },
       });
     }
@@ -128,12 +129,25 @@ export async function promoteAIMessageToFlashcard(aiMessageId: string) {
     orderBy: { createdAt: 'desc' },
   });
 
+  // Build note content — prefer vocabulary note, fall back to grammar correction
+  const vocabNote = aiMessage.vocabularyNote;
+  const grammarNote = aiMessage.grammarCorrection;
+  const correctionSpan = prevUserMessage?.errorSpan as any;
+
+  if (vocabNote) {
+    // Vocabulary note → save as vocabulary flashcard
+    const front = vocabNote.split(':')[0]?.trim() || vocabNote.slice(0, 50);
+    const back = vocabNote;
+    return await addCallGrammarToLearningList(front, back, vocabNote, aiMessage.chatSessionId!, 'Vocabulary Mistakes');
+  }
+
   if (!prevUserMessage) throw new Error('User message not found');
 
   const mistake = prevUserMessage.text;
-  const correctionSpan = prevUserMessage.errorSpan as any;
-  const correction = correctionSpan?.corrected || '';
-  const tip = aiMessage.grammarCorrection || '';
+  const correction = correctionSpan?.corrected || grammarNote || '';
+  const tip = grammarNote || '';
 
-  return await addCallGrammarToLearningList(mistake, correction, tip, aiMessage.chatSessionId!);
+  if (!mistake?.trim()) throw new Error('Nothing to save — no mistake found');
+
+  return await addCallGrammarToLearningList(mistake, correction, tip, aiMessage.chatSessionId!, 'Grammar Mistakes');
 }

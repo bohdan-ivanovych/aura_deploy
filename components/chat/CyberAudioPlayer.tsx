@@ -1,144 +1,133 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Play, VolumeX } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Volume2, Square, Loader2 } from 'lucide-react';
 
-type State = 'idle' | 'loading' | 'playing' | 'unavailable';
+interface CyberAudioPlayerProps {
+  message: string;
+  voiceId?: string | null;
+}
 
-// Module-level cache of object URLs keyed by `message|||voiceId`.
-// We NEVER revoke these during the session — revocation corrupts replay.
-// Browsers free object URLs on page unload automatically.
-const audioUrlCache = new Map<string, string>();
-
-const BAR_COUNT = 4;
-const BAR_DELAYS = [0, 0.15, 0.3, 0.1];
-const BAR_HEIGHTS = [
-  { min: 4, max: 14 },
-  { min: 6, max: 18 },
-  { min: 3, max: 12 },
-  { min: 5, max: 16 },
-];
-
-export function CyberAudioPlayer({ message, voiceId }: { message: string; voiceId?: string | null }) {
-  const [state, setState] = useState<State>('idle');
+export function CyberAudioPlayer({ message }: CyberAudioPlayerProps) {
+  const [state, setState] = useState<'idle' | 'loading' | 'playing' | 'error'>('idle');
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
 
-  const handleClick = useCallback(async () => {
-    if (state === 'playing') {
-      window.speechSynthesis.cancel();
-      setState('idle');
-      return;
-    }
-    if (state === 'unavailable') return;
-
-    if (!('speechSynthesis' in window)) {
-      setState('unavailable');
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(message);
-    utterance.lang = 'en-US'; // English by default
-
-    utterance.onstart = () => setState('playing');
-    utterance.onend = () => setState('idle');
-    utterance.onerror = (e) => {
-      console.warn('[TTS] playback error', e);
-      setState('idle');
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+      }
     };
+  }, []);
 
-    window.speechSynthesis.speak(utterance);
-  }, [state, message]);
+  const handleToggle = async () => {
+    if (state === 'playing') {
+      if (audioRef.current) {
+        audioRef.current.pause();
+      }
+      setState('idle');
+      return;
+    }
 
-  // Service unavailable — render a muted, non-interactive icon
-  if (state === 'unavailable') {
-    return (
-      <span
-        className="relative flex items-center justify-center w-6 h-6 rounded-lg opacity-30 cursor-default"
-        title="Voice unavailable"
-        style={{ color: 'var(--foreground-subtle)' }}
-      >
-        <VolumeX className="w-3 h-3" />
-      </span>
-    );
-  }
+    if (state === 'loading') return;
+
+    try {
+      setState('loading');
+      
+      const cleanMessage = message.replace(/https?:\/\/\S+/g, 'link').replace(/[*_~`]/g, '');
+      
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: cleanMessage })
+      });
+
+      if (!res.ok) throw new Error('TTS API failed');
+
+      const data = await res.json();
+      if (!data.results || data.results.length === 0) throw new Error('No audio returned');
+
+      const b64Chunks = data.results.map((r: any) => r.base64);
+      
+      let currentIndex = 0;
+
+      const playNext = async () => {
+        if (currentIndex >= b64Chunks.length) {
+          setState('idle');
+          return;
+        }
+
+        try {
+          const audio = new Audio(`data:audio/mp3;base64,${b64Chunks[currentIndex]}`);
+          audioRef.current = audio;
+          audio.onplay = () => setState('playing');
+          audio.onended = () => {
+            currentIndex++;
+            playNext();
+          };
+          audio.onerror = () => {
+            console.warn('[TTS] playback error', currentIndex);
+            currentIndex++;
+            playNext();
+          };
+          await audio.play();
+        } catch (err) {
+          console.warn('[TTS] play failed:', err);
+          setState('error');
+        }
+      };
+
+      await playNext();
+    } catch (err) {
+      console.error('[TTS] setup error:', err);
+      setState('error');
+      
+      // Fallback to Web Speech API
+      try {
+        const cleanMessage = message.replace(/https?:\/\/\S+/g, 'link').replace(/[*_~`]/g, '');
+        const utterance = new SpeechSynthesisUtterance(cleanMessage);
+        utterance.lang = 'en-US';
+        utterance.rate = 0.95;
+        
+        utterance.onstart = () => setState('playing');
+        utterance.onend = () => setState('idle');
+        utterance.onerror = () => setState('error');
+        
+        window.speechSynthesis.speak(utterance);
+      } catch (fallbackErr) {
+        console.error('Fallback TTS failed', fallbackErr);
+      }
+    }
+  };
 
   return (
     <button
-      onClick={handleClick}
-      className="relative flex items-center justify-center w-6 h-6 rounded-lg transition-all duration-200 hover:bg-white/8"
-      style={{ color: state !== 'idle' ? 'rgb(34,211,238)' : 'var(--foreground-subtle)' }}
-      title={state === 'playing' ? 'Stop' : 'Listen'}
+      onClick={handleToggle}
+      className={`
+        relative overflow-hidden
+        h-7 w-7 rounded-full 
+        transition-all duration-200 ease-out
+        flex items-center justify-center
+        ${state === 'playing'
+          ? 'bg-[var(--accent-cyan)]/12 text-[var(--accent-cyan)]'
+          : 'bg-transparent hover:bg-white/8 text-white/45 hover:text-white/75'
+        }
+      `}
+      title={state === 'playing' ? "Stop playback" : "Listen to message"}
     >
-      <AnimatePresence mode="wait">
-        {state === 'idle' && (
-          <motion.span
-            key="play"
-            initial={{ opacity: 0, scale: 0.7 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.7 }}
-            transition={{ duration: 0.15 }}
-          >
-            <Play className="w-3 h-3 fill-current" />
-          </motion.span>
-        )}
-
-        {state === 'loading' && (
-          <motion.span
-            key="spinner"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="w-3.5 h-3.5 rounded-full border-2 border-transparent"
-            style={{
-              borderTopColor: 'rgb(34,211,238)',
-              animation: 'spin 0.7s linear infinite',
-              boxShadow: '0 0 6px rgba(34,211,238,0.5)',
-            }}
-          />
-        )}
-
-        {state === 'playing' && (
-          <motion.span
-            key="bars"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="flex items-end gap-px"
-            style={{ height: '14px' }}
-          >
-            {Array.from({ length: BAR_COUNT }).map((_, i) => (
-              <motion.span
-                key={i}
-                className="block rounded-sm"
-                style={{
-                  width: '2.5px',
-                  background: 'rgb(34,211,238)',
-                  boxShadow: '0 0 4px rgba(34,211,238,0.8)',
-                  minHeight: `${BAR_HEIGHTS[i].min}px`,
-                }}
-                animate={{
-                  height: [
-                    `${BAR_HEIGHTS[i].min}px`,
-                    `${BAR_HEIGHTS[i].max}px`,
-                    `${BAR_HEIGHTS[i].min + 2}px`,
-                    `${BAR_HEIGHTS[i].max - 2}px`,
-                    `${BAR_HEIGHTS[i].min}px`,
-                  ],
-                }}
-                transition={{
-                  duration: 0.7,
-                  repeat: Infinity,
-                  ease: 'easeInOut',
-                  delay: BAR_DELAYS[i],
-                }}
-              />
-            ))}
-          </motion.span>
-        )}
-      </AnimatePresence>
+      {state === 'loading' ? (
+        <Loader2 className="w-3.5 h-3.5 text-[var(--accent-cyan)] animate-spin" />
+      ) : state === 'playing' ? (
+        <Square className="w-3.5 h-3.5 text-[var(--accent-cyan)] fill-current animate-pulse" />
+      ) : (
+        <Volume2 className={`w-3.5 h-3.5 ${state === 'error' ? 'text-red-400' : ''}`} />
+      )}
+      
+      {state === 'playing' && (
+        <div className="absolute inset-0 rounded-full bg-[var(--accent-cyan)]/10 animate-ping opacity-40" />
+      )}
     </button>
   );
 }
+// trigger recompile

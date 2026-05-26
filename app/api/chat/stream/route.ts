@@ -742,27 +742,56 @@ export async function POST(req: Request) {
               },
             }),
           );
-          const nodeSlug = mapWeaknessToNodeSlug(weaknessIdentified);
+          const rawSlug = mapWeaknessToNodeSlug(weaknessIdentified);
+          const dynamicSlug = weaknessIdentified.toLowerCase().trim().replace(/[^a-z0-9-]/g, '-').replace(/^-+|-+$/g, '');
+          const nodeSlug = rawSlug || dynamicSlug;
+
           if (nodeSlug) {
-            weaknessPromises.push(
-              prisma.userSkillProgress
-                .upsert({
-                  where: {
-                    userId_nodeSlug: { userId: finalUser.id, nodeSlug },
-                  },
-                  update: { practiced: { increment: 1 } },
-                  create: {
-                    userId: finalUser.id,
-                    nodeSlug,
-                    practiced: 1,
-                    correct: 0,
-                  },
-                })
-                .catch((err: unknown) => {
-                  console.error("skill progress error:", err);
-                  return null;
-                }),
-            );
+            if (!rawSlug && dynamicSlug) {
+               // Create dynamic node in DB if it doesn't exist
+               weaknessPromises.push(
+                 prisma.skillNode.upsert({
+                   where: { slug: dynamicSlug },
+                   update: {},
+                   create: {
+                     slug: dynamicSlug,
+                     title: weaknessIdentified.split(/[-_\s]+/).map((s: string) => s.charAt(0).toUpperCase() + s.slice(1)).join(' ').slice(0, 50),
+                     description: `Auto-generated skill node for ${weaknessIdentified}`,
+                     category: 'Emerging Skills',
+                     isCustom: true,
+                   }
+                 }).then(() => {
+                   return prisma.userSkillProgress.upsert({
+                     where: { userId_nodeSlug: { userId: finalUser.id, nodeSlug: dynamicSlug } },
+                     update: { practiced: { increment: 1 } },
+                     create: { userId: finalUser.id, nodeSlug: dynamicSlug, practiced: 1, correct: 0 },
+                   });
+                 }).catch((err: unknown) => {
+                   console.error("dynamic skill progress error:", err);
+                   return null;
+                 })
+               );
+            } else {
+              weaknessPromises.push(
+                prisma.userSkillProgress
+                  .upsert({
+                    where: {
+                      userId_nodeSlug: { userId: finalUser.id, nodeSlug },
+                    },
+                    update: { practiced: { increment: 1 } },
+                    create: {
+                      userId: finalUser.id,
+                      nodeSlug,
+                      practiced: 1,
+                      correct: 0,
+                    },
+                  })
+                  .catch((err: unknown) => {
+                    console.error("skill progress error:", err);
+                    return null;
+                  }),
+              );
+            }
           }
         }
         if (strengthIdentified) {
