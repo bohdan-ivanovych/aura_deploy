@@ -70,6 +70,7 @@ export async function PATCH(
         ...(typeof body.description === 'string' ? { description: body.description.trim() } : {}),
         ...(typeof body.isPublic === 'boolean' ? { isPublic: body.isPublic } : {}),
         ...(typeof body.avatarUrl === 'string' && body.avatarUrl.trim() ? { avatarUrl: body.avatarUrl.trim() } : {}),
+        ...(typeof body.systemPrompt === 'string' ? { systemPrompt: body.systemPrompt.trim() || null } : {}),
       },
     });
 

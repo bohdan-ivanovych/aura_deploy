@@ -33,6 +33,7 @@ interface Persona {
   isOwn?: boolean;
   creatorName?: string | null;
   creatorId?: string | null;
+  systemPrompt?: string | null;
 }
 
 interface PersonaStudioProps {
@@ -137,20 +138,31 @@ export function PersonaStudio({ isOpen, onClose, onInitialize }: PersonaStudioPr
     const resolvedPrompt = injectSlots(preset.systemPrompt, slots);
     try {
       // Check SWR cache first to avoid duplicate creation
+      // MUST match on isOwn to ensure we don't accidentally reuse a global seeded template directly.
       const cached = (templates as Persona[]).find(
-        (t) => t.name.toLowerCase() === preset.name.toLowerCase(),
+        (t) => t.name.toLowerCase() === preset.name.toLowerCase() && t.isOwn,
       );
       if (cached) {
-        // Update avatarUrl if the persona exists but doesn't have one or has a different one
-        if (!cached.avatarUrl && preset.image) {
+        // Update avatarUrl or systemPrompt if they have changed or are missing
+        const needsPromptUpdate = cached.systemPrompt !== resolvedPrompt;
+        const needsAvatarUpdate = !cached.avatarUrl && preset.image;
+
+        if (needsPromptUpdate || needsAvatarUpdate) {
           await fetch(`/api/personas/${cached.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ avatarUrl: preset.image }),
+            body: JSON.stringify({
+              ...(needsPromptUpdate ? { systemPrompt: resolvedPrompt } : {}),
+              ...(needsAvatarUpdate ? { avatarUrl: preset.image } : {}),
+            }),
           });
           // Update cache
           await globalMutate(SWR_KEY, (prev: Persona[] = []) => 
-            prev.map(p => p.id === cached.id ? { ...p, avatarUrl: preset.image } : p), false);
+            prev.map(p => p.id === cached.id ? { 
+              ...p, 
+              ...(needsPromptUpdate ? { systemPrompt: resolvedPrompt } : {}),
+              ...(needsAvatarUpdate ? { avatarUrl: preset.image } : {}),
+            } : p), false);
         }
         onInitialize(cached.id);
         setSaving(false);
