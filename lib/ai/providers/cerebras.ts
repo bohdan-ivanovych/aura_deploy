@@ -4,9 +4,9 @@ export async function callCerebras(
   messages: Array<{ role: string; content: string }>,
   maxTokens = 600,
   temperature = 0.85,
-  responseFormat?: { type: 'json_object' } | { type: 'text' }
+  responseFormat?: { type: 'json_object' } | { type: 'text' },
+  apiKey = env.CEREBRAS_API_KEY
 ): Promise<string> {
-  const apiKey = env.CEREBRAS_API_KEY;
   const model = env.CEREBRAS_MODEL;
 
   if (!apiKey) {

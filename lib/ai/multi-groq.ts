@@ -70,7 +70,6 @@ function makeCB(): CircuitBreaker {
 }
 
 // One CB per provider tier (module-level singletons — survive across requests)
-const cbCerebras = makeCB();
 const cbGemini = makeCB();
 
 function pruneFW(cb: CircuitBreaker): void {
@@ -119,12 +118,47 @@ function canAttempt(cb: CircuitBreaker): boolean {
   return cb.probeInFlight;
 }
 
-// ─── Groq Key Pool ────────────────────────────────────────────────────────────
+// ─── Key Pools ────────────────────────────────────────────────────────────────
 
 interface KeyEntry {
   key: string;
   cb: CircuitBreaker;
 }
+
+export function getCerebrasApiKeys(): string[] {
+  const keys: string[] = [];
+  if (env.CEREBRAS_API_KEY) keys.push(env.CEREBRAS_API_KEY);
+  if (env.CEREBRAS_API_KEYS) {
+    const list = env.CEREBRAS_API_KEYS.split(/[\s,]+/)
+      .map(k => k.trim())
+      .filter(Boolean);
+    keys.push(...list);
+  }
+  return Array.from(new Set(keys));
+}
+
+function buildCerebrasKeyPool(): KeyEntry[] {
+  const keys = getCerebrasApiKeys();
+  return keys.map(key => ({ key, cb: makeCB() }));
+}
+
+const cerebrasKeyPool: KeyEntry[] = buildCerebrasKeyPool();
+let cerebrasRrIndex = 0;
+
+function getNextAvailableCerebrasKey(): KeyEntry | null {
+  const len = cerebrasKeyPool.length;
+  if (len === 0) return null;
+  for (let i = 0; i < len; i++) {
+    const entry = cerebrasKeyPool[(cerebrasRrIndex + i) % len];
+    if (canAttempt(entry.cb)) {
+      cerebrasRrIndex = (cerebrasRrIndex + i + 1) % len;
+      return entry;
+    }
+  }
+  return null;
+}
+
+// ─── Groq Key Pool ────────────────────────────────────────────────────────────
 
 function buildKeyPool(): KeyEntry[] {
   const keys = getGroqApiKeys();
@@ -212,10 +246,13 @@ export async function makeAICompletion(opts: CompletionOptions): Promise<string>
   let lastError: Error | null = null;
 
   // ── Tier 1: Cerebras ──────────────────────────────────────────────────────
-  if (canAttempt(cbCerebras)) {
+  for (let attempt = 0; attempt < cerebrasKeyPool.length; attempt++) {
+    const entry = getNextAvailableCerebrasKey();
+    if (!entry) break;
+
     try {
       const result = await Promise.race([
-        callCerebras(messages as any, maxTokens, temperature, responseFormat),
+        callCerebras(messages as any, maxTokens, temperature, responseFormat, entry.key),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Cerebras request timed out')), timeoutMs)
         ),
@@ -223,13 +260,12 @@ export async function makeAICompletion(opts: CompletionOptions): Promise<string>
       if (isDegenerateResponse(result)) {
         throw new Error(`Cerebras returned degenerate response: ${result.slice(0, 80)}`);
       }
-      recordSuccess(cbCerebras);
+      recordSuccess(entry.cb);
       return result;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn('[circuit-breaker] Cerebras failed:', lastError.message);
-      if (isRetryable(lastError) || lastError.message.includes('degenerate')) recordFailure(cbCerebras);
-      // else: let it throw if it's a structural error, but we usually want to waterfall
+      console.warn(`[circuit-breaker] Cerebras key attempt failed:`, lastError.message);
+      recordFailure(entry.cb);
     }
   }
 
@@ -335,17 +371,18 @@ export async function* makeAIStream(
   } = opts;
 
   // ── Tier 1: Cerebras streaming ────────────────────────────────────────────
-  if (canAttempt(cbCerebras)) {
+  for (let attempt = 0; attempt < cerebrasKeyPool.length; attempt++) {
+    const entry = getNextAvailableCerebrasKey();
+    if (!entry) break;
+
     try {
       yield { type: 'provider', name: 'cerebras' };
-      const apiKey = env.CEREBRAS_API_KEY;
-      if (!apiKey) throw new Error('Cerebras API key is missing');
 
       const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
+          'Authorization': `Bearer ${entry.key}`,
         },
         body: JSON.stringify({
           model: env.CEREBRAS_MODEL,
@@ -390,13 +427,12 @@ export async function* makeAIStream(
         }
       }
 
-      recordSuccess(cbCerebras);
+      recordSuccess(entry.cb);
       yield { type: 'done', fullText };
       return;
     } catch (err) {
-      console.warn('[circuit-breaker] Cerebras stream failed:', err instanceof Error ? err.message : String(err));
-      if (isRetryable(err instanceof Error ? err : new Error(String(err)))) recordFailure(cbCerebras);
-      // fallback to next tier
+      console.warn('[circuit-breaker] Cerebras stream key attempt failed:', err instanceof Error ? err.message : String(err));
+      recordFailure(entry.cb);
     }
   }
 
@@ -484,9 +520,12 @@ export async function* makeAIStream(
 export function getCircuitBreakerStatus() {
   return {
     cerebras: {
-      state: cbCerebras.state,
-      failures: cbCerebras.failures,
-      openUntil: cbCerebras.openUntil,
+      state: cerebrasKeyPool.every(e => e.cb.state === 'OPEN') ? 'OPEN' : 'CLOSED',
+      keys: cerebrasKeyPool.map(e => ({
+        keyHint: e.key ? `...${e.key.slice(-6)}` : 'missing',
+        state: e.cb.state,
+        failures: e.cb.failures,
+      })),
     },
     groq: {
       state: keyPool.every(e => e.cb.state === 'OPEN') ? 'OPEN' : 'CLOSED',

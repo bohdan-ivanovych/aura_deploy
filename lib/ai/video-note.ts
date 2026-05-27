@@ -108,8 +108,25 @@ Return ONLY valid JSON, no markdown:
       timeoutMs: 12_000,
     });
 
-    const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
+    let parsed: any = null;
+    const trimmedRaw = raw.trim();
+    try {
+      parsed = JSON.parse(trimmedRaw);
+    } catch {
+      const start = trimmedRaw.indexOf('{');
+      const end = trimmedRaw.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        try {
+          parsed = JSON.parse(trimmedRaw.substring(start, end + 1));
+        } catch {
+          const cleaned = trimmedRaw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+          parsed = JSON.parse(cleaned);
+        }
+      } else {
+        const cleaned = trimmedRaw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
+        parsed = JSON.parse(cleaned);
+      }
+    }
 
     return {
       platform: ctx.platform,
@@ -118,7 +135,7 @@ Return ONLY valid JSON, no markdown:
       thumbnailUrl: ctx.thumbnailUrl,
       noteType: parsed.noteType === 'cross_language' ? 'cross_language' : 'english_phrase',
       phrase: parsed.phrase || fallbackPhrase,
-      explanation: parsed.explanation || '',
+      explanation: parsed.explanation || 'Interesting expression from the video.',
       examples: Array.isArray(parsed.examples) ? parsed.examples.slice(0, 3) : [],
       funFact: parsed.funFact || null,
     };

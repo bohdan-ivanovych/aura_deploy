@@ -4,6 +4,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   // Primary Cerebras key (Tier 1)
   CEREBRAS_API_KEY: z.string().optional().default(''),
+  // Comma-separated list of Cerebras API keys (optional)
+  CEREBRAS_API_KEYS: z.string().optional().default(''),
   CEREBRAS_MODEL: z.string().optional().default('qwen-3-235b-a22b-instruct-2507'),
   // Primary Groq key (Tier 2)
   GROQ_API_KEY: z.string().min(1, 'GROQ_API_KEY is required'),
@@ -32,6 +34,7 @@ function parseEnv() {
   const result = envSchema.safeParse({
     DATABASE_URL: process.env.DATABASE_URL,
     CEREBRAS_API_KEY: process.env.CEREBRAS_API_KEY,
+    CEREBRAS_API_KEYS: process.env.CEREBRAS_API_KEYS,
     CEREBRAS_MODEL: process.env.CEREBRAS_MODEL,
     GROQ_API_KEY: process.env.GROQ_API_KEY,
     GROQ_API_KEY_2: process.env.GROQ_API_KEY_2,

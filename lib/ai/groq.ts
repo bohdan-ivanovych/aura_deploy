@@ -52,10 +52,12 @@ export function getGroqClient(): Groq {
             const { client, hint } = getNextClient();
             try {
               let current: any = client;
+              let parent: any = client;
               for (const segment of path) {
+                parent = current;
                 current = current[segment];
               }
-              return await current.apply(thisArg, args);
+              return await current.apply(parent, args);
             } catch (err: any) {
               console.warn(
                 `[groq-rotation] Attempt ${attempt + 1}/${poolSize} failed using key ${hint}:`,

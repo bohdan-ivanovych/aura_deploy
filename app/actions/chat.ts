@@ -199,20 +199,20 @@ export async function sendMessageStream(
         const prevStealthTarget = lastAIAttempt?.stealthTarget;
 
         // ── Short-Video: Unified Multimodal Context Fetching ──────────────────
+        const shortsMatch = text.match(
+          /https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)\S*/i,
+        );
+        const reelsMatch = text.match(
+          /https?:\/\/(?:www\.)?instagram\.com\/(?:reels?|p)\/[\w-]+\/?/i,
+        );
+        const tiktokMatch = text.match(
+          /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i,
+        );
+        const hasVideoLink = !!(shortsMatch || reelsMatch || tiktokMatch);
+        const _isShortVideo = !!isTikTok || !!isShortVideo || hasVideoLink;
         let shortVideoContext: ShortVideoContext | null = null;
-        const _isShortVideo = !!isTikTok || !!isShortVideo;
 
         if (_isShortVideo) {
-          const shortsMatch = text.match(
-            /https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)\S*/i,
-          );
-          const reelsMatch = text.match(
-            /https?:\/\/(?:www\.)?instagram\.com\/(?:reels?|p)\/[\w-]+\/?/i,
-          );
-          const tiktokMatch = text.match(
-            /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com)\/\S+/i,
-          );
-
           let platform: ShortVideoPlatform = 'tiktok';
           let videoUrl = text.trim().split('?')[0];
 
