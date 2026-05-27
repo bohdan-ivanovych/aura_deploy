@@ -109,6 +109,24 @@ async function fetchMetaViaCobalt(url: string): Promise<PlatformMeta | null> {
  * TikTok — uses Cobalt API with yt-dlp fallback.
  */
 async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
+  try {
+    const res = await withTimeout(fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`), METADATA_TIMEOUT_MS, 'TikWM API');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 0 && data.data) {
+        return {
+          title: data.data.title || null,
+          authorName: data.data.author?.unique_id || data.data.author?.nickname || null,
+          playUrl: data.data.play || data.data.wmplay || null,
+          coverUrl: data.data.cover || null,
+          fileSizeBytes: data.data.size || null,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[VideoProcessor:tiktok] TikWM failed:', err);
+  }
+
   const cobaltMeta = await fetchMetaViaCobalt(url);
   if (cobaltMeta?.playUrl) return cobaltMeta;
 
