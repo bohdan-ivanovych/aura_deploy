@@ -10,21 +10,15 @@ import type { ReplyTarget } from '@/components/chat/ChatMessage';
 import { haptics } from '@/lib/utils/haptics';
 import { mapWeaknessToNodeSlug } from '@/lib/game/grammar-nodes';
 
-/** Parse raw SSE text into { event, data } pairs */
-function parseSSEChunk(raw: string): Array<{ event: string; data: string }> {
-  const results: Array<{ event: string; data: string }> = [];
-  const blocks = raw.split('\n\n');
-  for (const block of blocks) {
-    const lines = block.split('\n').filter(Boolean);
-    let event = '';
-    let data = '';
-    for (const line of lines) {
-      if (line.startsWith('event: ')) event = line.slice(7).trim();
-      else if (line.startsWith('data: ')) data = line.slice(6).trim();
-    }
-    if (event && data) results.push({ event, data });
+/** Parse a single SSE block (already split by \n\n) into { event, data } */
+function parseSSEBlock(block: string): { event: string; data: string } | null {
+  let event = '';
+  let data = '';
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event: ')) event = line.slice(7).trim();
+    else if (line.startsWith('data: ')) data = line.slice(6).trim();
   }
-  return results;
+  return event && data ? { event, data } : null;
 }
 
 export function useChatHandlers() {
@@ -41,7 +35,6 @@ export function useChatHandlers() {
   const [practicePrompt, setPracticePrompt] = useState<string | undefined>(undefined);
   const [limitReached, setLimitReached] = useState(false);
   const [typingSessionId, setTypingSessionId] = useState<string | null>(null);
-  // Track the latest weakness slug so depth indicator can link to skill tree
   const lastWeaknessSlugRef = useRef<string | null>(null);
 
   const sendLockRef = useRef(false);
@@ -51,7 +44,6 @@ export function useChatHandlers() {
     setSelectedSessionId(sessionId);
     setReplyTo(null);
 
-    // Lazy load messages if we only have the preview or none
     const currentSession = sessions.find(s => s.id === sessionId);
     if (!currentSession || !currentSession.messages || currentSession.messages.length <= 1) {
       fetch(`/api/chat-sessions/${sessionId}/messages`)
@@ -196,7 +188,6 @@ export function useChatHandlers() {
       setSelectedSessionId(data.session.id);
       onSuccess?.();
 
-      // If this is a brand-new session (no messages yet), trigger persona-personalized greeting
       if (isNew || (data.session.messages?.length ?? 0) === 0) {
         fetch(`/api/chat-sessions/${data.session.id}/greet`, { method: 'POST' })
           .then(r => r.json())
@@ -204,7 +195,6 @@ export function useChatHandlers() {
             if (greetData.message) {
               const currentSession = useAppStore.getState().chatSessions.find((s: any) => s.id === data.session.id);
               const existing: any[] = currentSession?.messages || [];
-              // Only inject if still empty (avoid duplicates on race)
               if (existing.length === 0) {
                 updateSession(data.session.id, {
                   messages: [...existing, {
@@ -226,7 +216,6 @@ export function useChatHandlers() {
   }, [isCreating, addSession, setSelectedSessionId, updateSession]);
 
   const handleReaction = useCallback(async (messageId: string, emoji: string) => {
-    // Optimistic UI Update first
     const currentSession = sessions.find(s => s.id === selectedSessionId);
     let originalMessages: any[] = [];
     if (currentSession) {
@@ -245,7 +234,6 @@ export function useChatHandlers() {
       });
     } catch {
       toast.error('Could not save reaction');
-      // Revert on error
       if (currentSession) {
         updateSession(selectedSessionId!, { messages: originalMessages });
       }
@@ -298,7 +286,6 @@ export function useChatHandlers() {
 
     setLoading(true);
 
-    // Get last AI message reaction for injection
     const allMsgs: any[] = getSession()?.messages || [];
     const lastAIMsg = [...allMsgs].reverse().find((m: any) => m.sender === 'AI');
     const lastReaction = lastAIMsg?.reaction ?? null;
@@ -346,7 +333,6 @@ export function useChatHandlers() {
       }
 
       updateReadState('received');
-      // Dispatch an event to refresh quests on the UI (e.g. Radar)
       window.dispatchEvent(new Event('quests-updated'));
 
       const reader = res.body.getReader();
@@ -362,234 +348,246 @@ export function useChatHandlers() {
 
         sseBuffer += decoder.decode(value, { stream: true });
 
-        // Process complete SSE event blocks (separated by \n\n)
         let sepIdx: number;
         while ((sepIdx = sseBuffer.indexOf('\n\n')) !== -1) {
           const block = sseBuffer.slice(0, sepIdx);
           sseBuffer = sseBuffer.slice(sepIdx + 2);
 
-          const parsed = parseSSEChunk(block + '\n\n');
-          for (const { event, data } of parsed) {
-            let payload: any;
-            try {
-              payload = JSON.parse(data);
-            } catch (parseErr) {
-              if (event === 'error') throw new Error('Stream error');
-              continue;
+          // FIX: simplified SSE block parser — no double-split
+          const parsed = parseSSEBlock(block);
+          if (!parsed) continue;
+          const { event, data } = parsed;
+
+          let payload: any;
+          try {
+            payload = JSON.parse(data);
+          } catch {
+            // FIX: don't throw 'Stream error' on a parse failure for a non-error event
+            if (event === 'error') {
+              throw new Error('Stream error (malformed payload)');
+            }
+            continue;
+          }
+
+          if (event === 'session') {
+            realUserMsgId = payload.userMsgId;
+            if (realUserMsgId) {
+              const msgs: any[] = getSession()?.messages || [];
+              updateSession(sessionId, {
+                messages: msgs.map((m: any) =>
+                  m.id === tempId ? { ...m, id: realUserMsgId, readState: 'received' } : m
+                ),
+              });
+            }
+          }
+
+          if (event === 'user_update') {
+            const targetId = payload.userMsgId || realUserMsgId || tempId;
+            const msgs: any[] = getSession()?.messages || [];
+            updateSession(sessionId, {
+              messages: msgs.map((m: any) =>
+                m.id === targetId ? {
+                  ...m,
+                  ...(payload.errorSpan !== undefined && { errorSpan: payload.errorSpan }),
+                  ...(payload.xpReward !== undefined && { xpReward: payload.xpReward }),
+                } : m
+              ),
+            });
+          }
+
+          if (event === 'typing_indicator') {
+            setTypingSessionId(sessionId);
+          }
+
+          if (event === 'message') {
+            if (!hasFirstBubble) {
+              hasFirstBubble = true;
+              updateReadState('read');
+            }
+            setTypingSessionId(null);
+
+            if (payload.weaknessIdentified) {
+              const slug = mapWeaknessToNodeSlug(payload.weaknessIdentified);
+              lastWeaknessSlugRef.current = slug ?? String(payload.weaknessIdentified).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            } else {
+              lastWeaknessSlugRef.current = null;
             }
 
-            if (event === 'session') {
-                realUserMsgId = payload.userMsgId;
-                if (realUserMsgId) {
-                  const msgs: any[] = getSession()?.messages || [];
-                  updateSession(sessionId, {
-                    messages: msgs.map((m: any) =>
-                      m.id === tempId ? { ...m, id: realUserMsgId, readState: 'received' } : m
-                    ),
-                  });
-                }
+            const newMsg = {
+              id: payload.id,
+              text: payload.text,
+              sender: 'AI' as const,
+              senderPersonaId: payload.senderPersonaId ?? null,
+              senderName: payload.senderName ?? null,
+              senderAvatar: payload.senderAvatar ?? null,
+              grammarCorrection: payload.grammarCorrection ?? null,
+              weaknessIdentified: payload.weaknessIdentified ?? null,
+              vocabularyNote: payload.vocabularyNote ?? null,
+              vibeNote: payload.vibeNote ?? null,
+              xpReward: payload.xpReward ?? 1,
+              suggestion: payload.suggestion ?? null,
+              errorSpan: payload.errorSpan ?? null,
+              replyTo: payload.replyTo ?? null,
+              createdAt: payload.createdAt ? new Date(payload.createdAt) : new Date(),
+            };
+
+            const msgs: any[] = getSession()?.messages || [];
+            updateSession(sessionId, { messages: [...msgs, newMsg] });
+          }
+
+          if (event === 'stats') {
+            if (typeof payload.currentDepth === 'number') {
+              updateDepth(payload.currentDepth);
+              if (typeof payload.depthDelta === 'number' && payload.depthDelta !== 0) {
+                setLastDepthChange({ delta: payload.depthDelta });
+                setTimeout(() => setLastDepthChange(null), 2200);
               }
+            }
 
-              if (event === 'user_update') {
-                const targetId = payload.userMsgId || realUserMsgId || tempId;
-                const msgs: any[] = getSession()?.messages || [];
-                updateSession(sessionId, {
-                  messages: msgs.map((m: any) =>
-                    m.id === targetId ? { 
-                      ...m, 
-                      ...(payload.errorSpan !== undefined && { errorSpan: payload.errorSpan }),
-                      ...(payload.xpReward !== undefined && { xpReward: payload.xpReward })
-                    } : m
-                  ),
-                });
-              }
-
-              if (event === 'typing_indicator') {
-                setTypingSessionId(sessionId);
-              }
-
-              if (event === 'message') {
-                if (!hasFirstBubble) {
-                  hasFirstBubble = true;
-                  updateReadState('read');
-                }
-                setTypingSessionId(null);
-
-                // Capture weakness slug for skill-tree navigation
-                if (payload.weaknessIdentified) {
-                  const slug = mapWeaknessToNodeSlug(payload.weaknessIdentified);
-                  // Fall back to sanitised raw value for custom/dynamic topics
-                  lastWeaknessSlugRef.current = slug ?? String(payload.weaknessIdentified).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                } else {
-                  lastWeaknessSlugRef.current = null;
-                }
-
-                const newMsg = {
-                  id: payload.id,
-                  text: payload.text,
-                  sender: 'AI' as const,
-                  senderPersonaId: payload.senderPersonaId ?? null,
-                  senderName: payload.senderName ?? null,
-                  senderAvatar: payload.senderAvatar ?? null,
-                  grammarCorrection: payload.grammarCorrection ?? null,
-                  weaknessIdentified: payload.weaknessIdentified ?? null,
-                  vocabularyNote: payload.vocabularyNote ?? null,
-                  vibeNote: payload.vibeNote ?? null,
-                  xpReward: payload.xpReward ?? 1,
-                  suggestion: payload.suggestion ?? null,
-                  errorSpan: payload.errorSpan ?? null,
-                  replyTo: payload.replyTo ?? null,
-                  createdAt: payload.createdAt ? new Date(payload.createdAt) : new Date(),
+            if (payload.userLevel && typeof payload.userLevel === 'string') {
+              const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
+              const levelKey = `cefr_shown_${payload.userLevel}`;
+              if (CEFR_LEVELS.includes(payload.userLevel) && !localStorage.getItem(levelKey)) {
+                localStorage.setItem(levelKey, '1');
+                type Level = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+                const lvl = payload.userLevel as Level;
+                const levelEmoji: Record<Level, string> = { A1: '🌱', A2: '🌿', B1: '⚡', B2: '🔥', C1: '💎', C2: '👑' };
+                const levelDescMap: Record<Level, string> = {
+                  A1: 'Beginner', A2: 'Elementary',
+                  B1: 'Intermediate', B2: 'Upper-Intermediate',
+                  C1: 'Advanced', C2: 'Mastery',
                 };
-
-                const msgs: any[] = getSession()?.messages || [];
-                updateSession(sessionId, { messages: [...msgs, newMsg] });
+                const emoji = levelEmoji[lvl] || '📊';
+                const levelDesc = levelDescMap[lvl] || lvl;
+                setTimeout(() => {
+                  toast(`${emoji} You're ${payload.userLevel} — ${levelDesc}`, {
+                    description: 'Share your English level!',
+                    duration: 8000,
+                    action: {
+                      label: 'Share',
+                      onClick: () => {
+                        const shareText = `I just got assessed as ${payload.userLevel} (${levelDesc}) English level on Aura! 🎯`;
+                        if (navigator.share) {
+                          navigator.share({ title: 'My English Level', text: shareText }).catch(() => { });
+                        } else {
+                          navigator.clipboard.writeText(shareText).then(() =>
+                            toast.success('Copied to clipboard!')
+                          ).catch(() => { });
+                        }
+                      },
+                    },
+                  });
+                }, 1200);
               }
+            }
 
-              if (event === 'stats') {
-                if (typeof payload.currentDepth === 'number') {
-                  updateDepth(payload.currentDepth);
-                  if (typeof payload.depthDelta === 'number' && payload.depthDelta !== 0) {
-                    setLastDepthChange({ delta: payload.depthDelta });
-                    setTimeout(() => setLastDepthChange(null), 2200);
-                  }
-                }
-
-                // 🎯 CEFR Level Badge — surface estimated level to user
-                if (payload.userLevel && typeof payload.userLevel === 'string') {
-                  const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
-                  const levelKey = `cefr_shown_${payload.userLevel}`;
-                  if (CEFR_LEVELS.includes(payload.userLevel) && !localStorage.getItem(levelKey)) {
-                    localStorage.setItem(levelKey, '1');
-                    type Level = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-                    const lvl = payload.userLevel as Level;
-                    const levelEmoji: Record<Level, string> = { A1: '🌱', A2: '🌿', B1: '⚡', B2: '🔥', C1: '💎', C2: '👑' };
-                    const levelDescMap: Record<Level, string> = {
-                      A1: 'Beginner', A2: 'Elementary',
-                      B1: 'Intermediate', B2: 'Upper-Intermediate',
-                      C1: 'Advanced', C2: 'Mastery',
-                    };
-                    const emoji = levelEmoji[lvl] || '📊';
-                    const levelDesc = levelDescMap[lvl] || lvl;
-                    setTimeout(() => {
-                      toast(`${emoji} You're ${payload.userLevel} — ${levelDesc}`, {
-                        description: 'Share your English level!',
-                        duration: 8000,
-                        action: {
-                          label: 'Share',
-                          onClick: () => {
-                            const shareText = `I just got assessed as ${payload.userLevel} (${levelDesc}) English level on Aura! 🎯`;
-                            if (navigator.share) {
-                              navigator.share({ title: 'My English Level', text: shareText }).catch(() => { });
-                            } else {
-                              navigator.clipboard.writeText(shareText).then(() =>
-                                toast.success('Copied to clipboard!')
-                              ).catch(() => { });
-                            }
-                          },
-                        },
-                      });
-                    }, 1200);
-                  }
-                }
-                // Streak milestone celebration
-                if (payload.streakMilestone && typeof payload.streakMilestone === 'number') {
-                  haptics.success();
-                  setTimeout(() => {
-                    useChatUIStore.getState().setShareTrigger({ text: `🔥 I hit a ${payload.streakMilestone}-day streak on Aura! Keep the momentum going.` });
-                  }, 600);
-                }
-                if (payload.questCompleted) {
-                  const { title, depthReward } = payload.questCompleted;
-                  haptics.success();
-                  setTimeout(() => {
-                    toast.success(`✓ ${title} · +${depthReward}m`, {
-                      duration: 5000,
-                      description: 'Quest complete — depth rewarded',
-                    });
-                  }, 800);
-                  if (typeof payload.currentDepth === 'number') {
-                    setTimeout(() => updateDepth(payload.currentDepth), 900);
-                  }
-                }
+            if (payload.streakMilestone && typeof payload.streakMilestone === 'number') {
+              haptics.success();
+              setTimeout(() => {
+                useChatUIStore.getState().setShareTrigger({ text: `🔥 I hit a ${payload.streakMilestone}-day streak on Aura! Keep the momentum going.` });
+              }, 600);
+            }
+            if (payload.questCompleted) {
+              const { title, depthReward } = payload.questCompleted;
+              haptics.success();
+              setTimeout(() => {
+                toast.success(`✓ ${title} · +${depthReward}m`, {
+                  duration: 5000,
+                  description: 'Quest complete — depth rewarded',
+                });
+              }, 800);
+              if (typeof payload.currentDepth === 'number') {
+                setTimeout(() => updateDepth(payload.currentDepth), 900);
               }
+            }
+          }
 
-              if (event === 'watching_done') {
-                window.dispatchEvent(new Event('chat-watching-done'));
-              }
+          if (event === 'watching_done') {
+            window.dispatchEvent(new Event('chat-watching-done'));
+          }
 
-              if (event === 'error') {
-                throw new Error(payload.error || 'Stream error');
-              }
+          // FIX: handle limit_reached as its own SSE event type so setLimitReached
+          // is actually called (previously DAILY_LIMIT_REACHED came through as a
+          // generic `error` event and was only shown as a toast, never gating the UI)
+          if (event === 'limit_reached') {
+            setLimitReached(true);
+            setTypingSessionId(null);
+            const msgs: any[] = getSession()?.messages || [];
+            if (!realUserMsgId) {
+              updateSession(sessionId, { messages: msgs.filter((m: any) => m.id !== tempId) });
+            }
+            sendLockRef.current = false;
+            if (isMountedRef.current) setLoading(false);
+            return; // don't throw — just stop
+          }
 
-              if (event === 'done') {
-                // Update depth & HP from the done payload (stream API sends these here, not in stats event)
-                if (typeof payload.currentDepth === 'number') {
-                  updateDepth(payload.currentDepth);
-                }
+          if (event === 'error') {
+            // FIX: clear typing indicator before throwing so it doesn't stay stuck
+            setTypingSessionId(null);
+            throw new Error(payload.error || 'Stream error');
+          }
 
-                if (typeof payload.depthDelta === 'number' && payload.depthDelta !== 0) {
-                  // Attach the weakness slug so the depth indicator can navigate to the skill tree
-                  setLastDepthChange({ delta: payload.depthDelta, skillSlug: lastWeaknessSlugRef.current });
-                  setTimeout(() => setLastDepthChange(null), 4000);
-                }
+          if (event === 'done') {
+            if (typeof payload.currentDepth === 'number') {
+              updateDepth(payload.currentDepth);
+            }
 
-                window.dispatchEvent(new CustomEvent('quest-progress-update'));
-                resetInactivityTimers();
-                
-                // If this was a short-video message (TikTok / Shorts / Reels),
-                // fetch the Note card in the background and inject it into the last AI message.
-                const _isShortVideo = isShortVideo || isTikTok;
-                if (_isShortVideo) {
-                  const platform = shortVideoPlatform || (isTikTok ? 'tiktok' : 'tiktok');
-                  const noteApiMap: Record<string, string> = {
-                    tiktok: '/api/tiktok-note',
-                    shorts: '/api/shorts-note',
-                    reels:  '/api/reels-note',
-                  };
-                  const noteApi = noteApiMap[platform] || '/api/tiktok-note';
+            if (typeof payload.depthDelta === 'number' && payload.depthDelta !== 0) {
+              setLastDepthChange({ delta: payload.depthDelta, skillSlug: lastWeaknessSlugRef.current });
+              setTimeout(() => setLastDepthChange(null), 4000);
+            }
 
-                  // Extract the video URL from the user message text
-                  const videoUrlMatch = userText.match(
-                    /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com|youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+|instagram\.com\/(?:reels?|p)\/[\w-]+)\S*/i,
+            window.dispatchEvent(new CustomEvent('quest-progress-update'));
+            resetInactivityTimers();
+
+            const _isShortVideo = isShortVideo || isTikTok;
+            if (_isShortVideo) {
+              const platform = shortVideoPlatform || (isTikTok ? 'tiktok' : 'tiktok');
+              const noteApiMap: Record<string, string> = {
+                tiktok: '/api/tiktok-note',
+                shorts: '/api/shorts-note',
+                reels: '/api/reels-note',
+              };
+              const noteApi = noteApiMap[platform] || '/api/tiktok-note';
+
+              const videoUrlMatch = userText.match(
+                /https?:\/\/(?:www\.)?(?:tiktok\.com|vm\.tiktok\.com|youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+|instagram\.com\/(?:reels?|p)\/[\w-]+)\S*/i,
+              );
+              const videoUrl = videoUrlMatch ? videoUrlMatch[0].split('?')[0] : userText;
+
+              fetch(noteApi, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: videoUrl }),
+              })
+                .then(r => r.ok ? r.json() : null)
+                .then(noteData => {
+                  if (!noteData || !noteData.phrase) return;
+                  const msgs: any[] = getSession()?.messages || [];
+                  const lastAIIdx = msgs.map((m: any) => m.sender).lastIndexOf('AI');
+                  if (lastAIIdx === -1) return;
+                  const updated = msgs.map((m: any, i: number) =>
+                    i === lastAIIdx ? { ...m, tiktokNote: noteData } : m
                   );
-                  const videoUrl = videoUrlMatch ? videoUrlMatch[0].split('?')[0] : userText;
+                  updateSession(sessionId, { messages: updated });
+                })
+                .catch(() => { });
+            }
 
-                  fetch(noteApi, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: videoUrl }),
-                  })
-                    .then(r => r.ok ? r.json() : null)
-                    .then(noteData => {
-                      if (!noteData || !noteData.phrase) return;
-                      // Inject note into the last AI message in the session
-                      const msgs: any[] = getSession()?.messages || [];
-                      const lastAIIdx = msgs.map((m: any) => m.sender).lastIndexOf('AI');
-                      if (lastAIIdx === -1) return;
-                      const updated = msgs.map((m: any, i: number) =>
-                        i === lastAIIdx ? { ...m, tiktokNote: noteData } : m
-                      );
-                      updateSession(sessionId, { messages: updated });
-                    })
-                    .catch(() => { /* silent — Notes are optional */ });
-                }
-
-                const allSessions = useAppStore.getState().chatSessions;
-                const totalUserMsgs = (allSessions as any[]).reduce(
-                  (sum: number, s: any) => sum + (s.messages as any[]).filter((m: any) => m.sender === 'USER').length, 0
-                );
-                if (totalUserMsgs === 5 && !localStorage.getItem('initial_quests_shown')) {
-                  localStorage.setItem('initial_quests_shown', '1');
-                  fetch('/api/quests').then(r => r.json()).then(qData => {
-                    (qData.quests || []).slice(0, 3).forEach((quest: any, i: number) => {
-                      setTimeout(() => {
-                        toast(`🎯 ${quest.title}`, { description: quest.description, duration: 7000, icon: '🗺️' });
-                      }, 1800 + i * 900);
-                    });
-                  }).catch(() => { });
-                }
-              }
+            const allSessions = useAppStore.getState().chatSessions;
+            const totalUserMsgs = (allSessions as any[]).reduce(
+              (sum: number, s: any) => sum + (s.messages as any[]).filter((m: any) => m.sender === 'USER').length, 0
+            );
+            if (totalUserMsgs === 5 && !localStorage.getItem('initial_quests_shown')) {
+              localStorage.setItem('initial_quests_shown', '1');
+              fetch('/api/quests').then(r => r.json()).then(qData => {
+                (qData.quests || []).slice(0, 3).forEach((quest: any, i: number) => {
+                  setTimeout(() => {
+                    toast(`🎯 ${quest.title}`, { description: quest.description, duration: 7000, icon: '🗺️' });
+                  }, 1800 + i * 900);
+                });
+              }).catch(() => { });
+            }
           }
         }
       }
@@ -597,16 +595,14 @@ export function useChatHandlers() {
     } catch (err) {
       setTypingSessionId(null);
       const msgs: any[] = getSession()?.messages || [];
-      // Only remove the temporary message if the server hasn't confirmed storage yet
       if (!realUserMsgId) {
         updateSession(sessionId, { messages: msgs.filter((m: any) => m.id !== tempId) });
       } else {
-        // If it was stored, we should just mark it as sent or error
-        updateSession(sessionId, { 
-          messages: msgs.map((m: any) => m.id === realUserMsgId ? { ...m, readState: 'sent' } : m) 
+        updateSession(sessionId, {
+          messages: msgs.map((m: any) => m.id === realUserMsgId ? { ...m, readState: 'sent' } : m),
         });
       }
-      
+
       const errorMessage = err instanceof Error ? err.message : 'Transmission failed';
       if (errorMessage.includes('API key') || errorMessage.includes('configured')) {
         toast.error('AI service not configured. Check your Groq API key.');

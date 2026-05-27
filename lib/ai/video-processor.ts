@@ -12,7 +12,6 @@
  *   2. The shared `processShortVideo()` pipeline runs Whisper on the
  *      download URL, then falls back to Vision API on the cover image.
  */
-
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { generateText } from 'ai';
 import { getGroqClient } from '@/lib/ai/groq';
@@ -26,7 +25,6 @@ const googleProvider = createGoogleGenerativeAI({
 const ytDlp = new YTDlpWrap();
 
 // ─── Shared Types ─────────────────────────────────────────────────────────────
-
 export type ShortVideoPlatform = 'tiktok' | 'shorts' | 'reels';
 
 export interface ShortVideoContext {
@@ -52,7 +50,6 @@ interface PlatformMeta {
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
 const MAX_VIDEO_SIZE = 15 * 1024 * 1024; // 15 MB
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 12_000;
 const METADATA_TIMEOUT_MS = 7_000;
@@ -70,31 +67,57 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 
 // ─── Platform Adapters ────────────────────────────────────────────────────────
 
+/**
+ * FIX: Cobalt API updated to v2 format.
+ * Old endpoint: POST https://api.cobalt.tools/api/json
+ * New endpoint: POST https://api.cobalt.tools/ with Accept: application/json
+ */
 async function fetchMetaViaCobalt(url: string): Promise<PlatformMeta | null> {
   try {
     console.log('[VideoProcessor:Cobalt] Querying cobalt API for:', url);
-    const res = await fetch('https://api.cobalt.tools/api/json', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        url: url,
-        downloadMode: 'audio',
+    const res = await withTimeout(
+      fetch('https://api.cobalt.tools/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          url,
+          downloadMode: 'audio',
+          audioFormat: 'mp3',
+        }),
       }),
-    });
+      METADATA_TIMEOUT_MS,
+      'Cobalt API',
+    );
+
     if (res.ok) {
       const data = await res.json();
-      if (data.url) {
-        console.log('[VideoProcessor:Cobalt] Successfully got download url:', data.url);
+      // Cobalt v2 response: { status: 'tunnel'|'redirect'|'picker', url?, filename? }
+      const downloadUrl = data.url ?? data.audio ?? null;
+      if (downloadUrl) {
+        console.log('[VideoProcessor:Cobalt] Successfully got download url');
         return {
-          title: data.filename || null,
+          title: data.filename ?? null,
           authorName: null,
-          playUrl: data.url,
+          playUrl: downloadUrl,
           coverUrl: null,
           fileSizeBytes: null,
         };
+      }
+      // picker response — take the first audio item
+      if (data.status === 'picker' && Array.isArray(data.picker) && data.picker.length > 0) {
+        const firstAudio = data.picker.find((p: any) => p.type === 'audio') ?? data.picker[0];
+        if (firstAudio?.url) {
+          return {
+            title: data.filename ?? null,
+            authorName: null,
+            playUrl: firstAudio.url,
+            coverUrl: firstAudio.thumb ?? null,
+            fileSizeBytes: null,
+          };
+        }
       }
     } else {
       console.warn('[VideoProcessor:Cobalt] status not ok:', res.status);
@@ -105,21 +128,35 @@ async function fetchMetaViaCobalt(url: string): Promise<PlatformMeta | null> {
   return null;
 }
 
+/** Helper: check if yt-dlp is available in PATH */
+function isYtDlpEnvError(err: unknown): boolean {
+  return (
+    (err as any)?.code === 'ENOENT' ||
+    String(err).includes('ENOENT') ||
+    String(err).includes('spawn')
+  );
+}
+
 /**
- * TikTok — uses Cobalt API with yt-dlp fallback.
+ * TikTok — uses TikWM API → Cobalt → yt-dlp fallback.
  */
 async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
+  // 1. TikWM
   try {
-    const res = await withTimeout(fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`), METADATA_TIMEOUT_MS, 'TikWM API');
+    const res = await withTimeout(
+      fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`),
+      METADATA_TIMEOUT_MS,
+      'TikWM API',
+    );
     if (res.ok) {
       const data = await res.json();
       if (data.code === 0 && data.data) {
         return {
-          title: data.data.title || null,
-          authorName: data.data.author?.unique_id || data.data.author?.nickname || null,
-          playUrl: data.data.play || data.data.wmplay || null,
-          coverUrl: data.data.cover || null,
-          fileSizeBytes: data.data.size || null,
+          title: data.data.title ?? null,
+          authorName: data.data.author?.unique_id ?? data.data.author?.nickname ?? null,
+          playUrl: data.data.play ?? data.data.wmplay ?? null,
+          coverUrl: data.data.cover ?? null,
+          fileSizeBytes: data.data.size ?? null,
         };
       }
     }
@@ -127,35 +164,39 @@ async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
     console.warn('[VideoProcessor:tiktok] TikWM failed:', err);
   }
 
+  // 2. Cobalt
   const cobaltMeta = await fetchMetaViaCobalt(url);
   if (cobaltMeta?.playUrl) return cobaltMeta;
 
+  // 3. yt-dlp — FIX: handle ENOENT gracefully (same as Reels)
   try {
-    const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'TikTok metadata');
-    // Prefer best audio format if available, otherwise fallback to general url
-    const bestAudio = info.formats?.filter((f: any) => f.acodec !== 'none')?.sort((a: any, b: any) => (b.tbr || 0) - (a.tbr || 0))[0];
-
+    const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'TikTok yt-dlp');
+    const bestAudio = info.formats
+      ?.filter((f: any) => f.acodec !== 'none')
+      ?.sort((a: any, b: any) => (b.tbr ?? 0) - (a.tbr ?? 0))[0];
     return {
-      title: info.title || info.description || null,
-      authorName: info.uploader || info.creator || null,
-      playUrl: bestAudio?.url || info.url || null,
-      coverUrl: info.thumbnail || null,
-      fileSizeBytes: null, // Let the pipeline check size later
+      title: info.title ?? info.description ?? null,
+      authorName: info.uploader ?? info.creator ?? null,
+      playUrl: bestAudio?.url ?? info.url ?? null,
+      coverUrl: info.thumbnail ?? null,
+      fileSizeBytes: null,
     };
   } catch (err) {
-    console.warn('[VideoProcessor:tiktok] yt-dlp failed:', err);
+    const isEnv = isYtDlpEnvError(err);
+    console.warn(`[VideoProcessor:tiktok] yt-dlp failed${isEnv ? ' (yt-dlp not in PATH)' : ''}:`, err);
     return { title: null, authorName: null, playUrl: null, coverUrl: null };
   }
 }
 
 /**
  * YouTube Shorts — uses youtube-transcript for direct text extraction.
+ * Whisper is a fallback only if transcript is unavailable.
  */
 async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta> {
   return {
     title: fallbackTitle,
     authorName: null,
-    playUrl: null, // we won't need audio download for whisper
+    playUrl: null,
     coverUrl: null,
   };
 }
@@ -163,27 +204,30 @@ async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promi
 /**
  * Instagram Reels — uses Cobalt API with yt-dlp fallback.
  */
-async function fetchReelsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta & { _noContext?: boolean }> {
+async function fetchReelsMeta(
+  url: string,
+  fallbackTitle: string | null,
+): Promise<PlatformMeta & { _noContext?: boolean }> {
   const cobaltMeta = await fetchMetaViaCobalt(url);
   if (cobaltMeta?.playUrl) {
-    return { ...cobaltMeta, title: cobaltMeta.title || fallbackTitle };
+    return { ...cobaltMeta, title: cobaltMeta.title ?? fallbackTitle };
   }
 
   try {
-    const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'Reels metadata');
-    const bestAudio = info.formats?.filter((f: any) => f.acodec !== 'none')?.sort((a: any, b: any) => (b.tbr || 0) - (a.tbr || 0))[0];
-
+    const info = await withTimeout(ytDlp.getVideoInfo(url), METADATA_TIMEOUT_MS, 'Reels yt-dlp');
+    const bestAudio = info.formats
+      ?.filter((f: any) => f.acodec !== 'none')
+      ?.sort((a: any, b: any) => (b.tbr ?? 0) - (a.tbr ?? 0))[0];
     return {
-      title: info.title || info.description || fallbackTitle,
-      authorName: info.uploader || info.creator || null,
-      playUrl: bestAudio?.url || info.url || null,
-      coverUrl: info.thumbnail || null,
+      title: info.title ?? info.description ?? fallbackTitle,
+      authorName: info.uploader ?? info.creator ?? null,
+      playUrl: bestAudio?.url ?? info.url ?? null,
+      coverUrl: info.thumbnail ?? null,
       fileSizeBytes: null,
     };
-  } catch (err: any) {
-    const isEnv = err?.code === 'ENOENT' || String(err).includes('ENOENT') || String(err).includes('spawn');
+  } catch (err) {
+    const isEnv = isYtDlpEnvError(err);
     console.warn(`[VideoProcessor:reels] yt-dlp failed${isEnv ? ' (yt-dlp not in PATH)' : ''}:`, err);
-    // Signal caller that no content is available so LLM can ask user to describe the video
     return { title: fallbackTitle, authorName: null, playUrl: null, coverUrl: null, _noContext: true };
   }
 }
@@ -194,36 +238,39 @@ async function runTranscriptionPipeline(
   meta: PlatformMeta,
   result: ShortVideoContext,
 ): Promise<void> {
-  let gotAudio = false;
-
   // ── Step 1: Whisper transcription ──────────────────────────────────────────
   if (meta.playUrl && (!meta.fileSizeBytes || meta.fileSizeBytes <= MAX_VIDEO_SIZE)) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), MEDIA_DOWNLOAD_TIMEOUT_MS);
+    const controller = new AbortController();
+    // FIX: use let so we can clearTimeout in finally
+    let timeout: ReturnType<typeof setTimeout> | null = setTimeout(
+      () => controller.abort(),
+      MEDIA_DOWNLOAD_TIMEOUT_MS,
+    );
 
+    try {
       const videoRes = await fetch(meta.playUrl, { signal: controller.signal });
-      if (!videoRes.ok) throw new Error('Video fetch failed');
+      if (!videoRes.ok) throw new Error(`Video fetch failed: ${videoRes.status}`);
 
       const arrayBuffer = await videoRes.arrayBuffer();
-      clearTimeout(timeout);
 
       if (arrayBuffer.byteLength > 0 && arrayBuffer.byteLength <= MAX_VIDEO_SIZE) {
         const groqFile = new File([arrayBuffer], 'video.mp4', { type: 'video/mp4' });
         const groq = getGroqClient();
-
-        const transcription = await withTimeout(groq.audio.transcriptions.create({
-          file: groqFile,
-          model: 'whisper-large-v3-turbo',
-          response_format: 'json',
-          temperature: 0.0,
-        }), TRANSCRIPTION_TIMEOUT_MS, 'Whisper transcription');
+        const transcription = await withTimeout(
+          groq.audio.transcriptions.create({
+            file: groqFile,
+            model: 'whisper-large-v3-turbo',
+            response_format: 'json',
+            temperature: 0.0,
+          }),
+          TRANSCRIPTION_TIMEOUT_MS,
+          'Whisper transcription',
+        );
 
         if (transcription.text?.trim().length > 0) {
           result.transcription = transcription.text.trim();
-          gotAudio = true;
           console.log(
-            `[VideoProcessor:${result.platform}] Whisper Transcription Extracted (${transcription.text.length} chars)`,
+            `[VideoProcessor:${result.platform}] Whisper extracted (${transcription.text.length} chars)`,
           );
         } else {
           console.log(`[VideoProcessor:${result.platform}] Whisper returned empty text.`);
@@ -231,36 +278,43 @@ async function runTranscriptionPipeline(
       }
     } catch (err) {
       console.warn(`[VideoProcessor:${result.platform}] Whisper failed:`, err);
+    } finally {
+      // FIX: always clear the abort timeout to avoid dangling timers
+      if (timeout !== null) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
     }
   }
 
-  // ── Step 2: Vision analysis on cover image (always attempted if available) ───
+  // ── Step 2: Vision analysis on cover image ─────────────────────────────────
   if (meta.coverUrl) {
     try {
-      const coverUrl = meta.coverUrl;
-      console.log(`[VideoProcessor:${result.platform}] Running Vision API on thumbnail...`);
-
-      const { text } = await withTimeout(generateText({
-        model: googleProvider('gemini-2.0-flash'),
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: 'You are an AI analyzing a short-form video thumbnail/cover image. Describe exactly what is happening in the scene, any people visible, their expressions and emotions, any objects, the setting, and carefully extract ANY text visible on screen (OCR). Keep it concise but highly descriptive. Max 3 sentences.',
-              },
-              { type: 'image', image: new URL(coverUrl) },
-            ],
-          },
-        ],
-        temperature: 0.4,
-      }), VISION_TIMEOUT_MS, 'Thumbnail vision');
+      const { text } = await withTimeout(
+        generateText({
+          model: googleProvider('gemini-3.1-flash-lite'),
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: 'You are an AI analyzing a short-form video thumbnail/cover image. Describe exactly what is happening in the scene, any people visible, their expressions and emotions, any objects, the setting, and carefully extract ANY text visible on screen (OCR). Keep it concise but highly descriptive. Max 3 sentences.',
+                },
+                { type: 'image', image: new URL(meta.coverUrl) },
+              ],
+            },
+          ],
+          temperature: 0.4,
+        }),
+        VISION_TIMEOUT_MS,
+        'Thumbnail vision',
+      );
 
       if (text?.trim()) {
         result.visionAnalysis = text.trim();
         console.log(
-          `[VideoProcessor:${result.platform}] Vision analysis extracted (${text.length} chars)`,
+          `[VideoProcessor:${result.platform}] Vision extracted (${text.length} chars)`,
         );
       }
     } catch (err) {
@@ -268,10 +322,9 @@ async function runTranscriptionPipeline(
     }
   }
 
-  // Warn if we ended up with no useful content for the LLM
   if (!result.transcription && !result.visionAnalysis) {
     console.warn(
-      `[VideoProcessor:${result.platform}] WARNING: No transcription or vision analysis available. LLM will have no video content to react to.`,
+      `[VideoProcessor:${result.platform}] WARNING: No transcription or vision analysis available.`,
     );
   }
 }
@@ -282,7 +335,7 @@ export async function processShortVideo(
   platform: ShortVideoPlatform,
   url: string,
   fallbackTitle: string | null = null,
-  externalCoverUrl: string | null = null, // oEmbed / page-level thumbnail
+  externalCoverUrl: string | null = null,
 ): Promise<ShortVideoContext> {
   const result: ShortVideoContext = {
     platform,
@@ -295,7 +348,6 @@ export async function processShortVideo(
 
   try {
     const cleanUrl = url.trim().split('?')[0];
-
     let meta: PlatformMeta;
 
     if (platform === 'tiktok') {
@@ -310,30 +362,40 @@ export async function processShortVideo(
       meta = reelsMeta;
     }
 
-    result.title = meta.title || fallbackTitle;
+    result.title = meta.title ?? fallbackTitle;
     result.authorName = meta.authorName;
-    result.thumbnailUrl = meta.coverUrl || externalCoverUrl;
+    result.thumbnailUrl = meta.coverUrl ?? externalCoverUrl;
     if (!meta.coverUrl && externalCoverUrl) meta.coverUrl = externalCoverUrl;
 
-    console.log(`[VideoProcessor:${platform}] Fetched metadata → Title: "${result.title}", Author: "${result.authorName}"`);
+    console.log(
+      `[VideoProcessor:${platform}] Meta → Title: "${result.title}", Author: "${result.authorName}"`,
+    );
 
+    // YouTube Shorts: try transcript first
     if (platform === 'shorts') {
       try {
         let videoId = cleanUrl;
         if (cleanUrl.includes('/shorts/')) {
           videoId = cleanUrl.split('/shorts/')[1].split('?')[0];
         } else if (cleanUrl.includes('v=')) {
-          videoId = new URL(cleanUrl).searchParams.get('v') || cleanUrl;
+          videoId = new URL(cleanUrl).searchParams.get('v') ?? cleanUrl;
         } else if (cleanUrl.includes('youtu.be/')) {
           videoId = cleanUrl.split('youtu.be/')[1].split('?')[0];
         }
-        const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+
+        const transcriptItems = await withTimeout(
+          YoutubeTranscript.fetchTranscript(videoId),
+          METADATA_TIMEOUT_MS,
+          'YouTube transcript',
+        );
         if (transcriptItems && transcriptItems.length > 0) {
           result.transcription = transcriptItems.map((item: any) => item.text).join(' ');
-          console.log(`[VideoProcessor:shorts] youtube-transcript extracted (${result.transcription.length} chars)`);
+          console.log(
+            `[VideoProcessor:shorts] youtube-transcript extracted (${result.transcription.length} chars)`,
+          );
         }
       } catch (err) {
-        console.warn(`[VideoProcessor:shorts] youtube-transcript failed:`, err);
+        console.warn('[VideoProcessor:shorts] youtube-transcript failed:', err);
       }
     }
 

@@ -4,7 +4,6 @@ import prisma from '@/lib/db/prisma';
 import { mapWeaknessToNodeSlug } from '@/lib/game/grammar-nodes';
 import { checkMessageLimit, incrementMessageCount } from '@/lib/auth/subscription';
 
-// Sliding window: last N messages (includes hidden call transcripts for context)
 import { CHAT_MAX_CONTEXT_MESSAGES as MAX_CONTEXT_MESSAGES, CHAT_MAX_COMPLETION_TOKENS as MAX_COMPLETION_TOKENS } from '@/src/config/gameplayConfig';
 
 import { calculateDepth, calculateStreak } from '@/lib/game/mechanics';
@@ -27,8 +26,7 @@ export async function sendMessageStream(
   personaId?: string | null,
   lastReaction?: string | null,
   isTikTok?: boolean,
-  isShortVideo?: boolean, // alias — set when any short-form video URL is detected
-
+  isShortVideo?: boolean,
 ): Promise<ReadableStream<Uint8Array>> {
   if (!text?.trim()) throw new Error('Missing text');
   if (!userId) throw new Error('ANONYMOUS_ID_MISSING');
@@ -42,7 +40,6 @@ export async function sendMessageStream(
       };
 
       try {
-
         const [userRecord, recentWeaknesses, activeQuests] = await Promise.all([
           prisma.user.findUnique({ where: { id: userId! } })
             .then(u => u ?? prisma.user.create({
@@ -60,21 +57,22 @@ export async function sendMessageStream(
           }),
         ]);
 
-        // ── Daily message limit (free tier gate) ───────────────────────────
+        // ── Daily message limit ─────────────────────────────────────────────
         const { allowed, remaining, isPro } = await checkMessageLimit(userRecord.id);
         if (!allowed) {
-          enqueue(sseEvent('error', {
+          // FIX: send a structured SSE error so the client can call setLimitReached(true)
+          // instead of showing a generic "Stream error" toast
+          enqueue(sseEvent('limit_reached', {
             error: 'DAILY_LIMIT_REACHED',
             remaining: 0,
             isPro: false,
-            message: 'You\'ve reached your 20 messages for today. Upgrade to Aura Pro for unlimited chats.',
+            message: "You've reached your 20 messages for today. Upgrade to Aura Pro for unlimited chats.",
           }));
           controller.close();
           return;
         }
 
         // Find or create persona
-        // SAFETY: Never use findFirst() — it may return another user's private persona.
         let persona = personaId
           ? await prisma.persona.findUnique({ where: { id: personaId } })
           : await prisma.persona.findFirst({ where: { creatorId: userRecord.id }, orderBy: { name: 'asc' } });
@@ -84,17 +82,15 @@ export async function sendMessageStream(
           });
         }
 
-        // Find or create 1:1 session (enforced by @@unique([userId, personaId]))
+        // Find or create session
         let session: { id: string } | null = chatSessionId
           ? await prisma.chatSession.findUnique({ where: { id: chatSessionId } })
           : null;
 
         if (!session) {
-          // Try to find by unique 1:1 constraint
           const existingByUnique = await prisma.chatSession.findUnique({
             where: { userId_personaId: { userId: userRecord.id, personaId: persona.id } },
           });
-
           if (existingByUnique) {
             session = existingByUnique;
           } else {
@@ -119,16 +115,12 @@ export async function sendMessageStream(
           },
         });
 
-        // Increment daily counter now that message is committed to DB.
-        // Fire-and-forget — a failure here should never block the response.
         incrementMessageCount(userRecord.id).catch(err =>
           console.error('[chat] Failed to increment message count:', err)
         );
 
-        // Emit session ID first so client can correlate
         enqueue(sseEvent('session', { sessionId: session.id, userMsgId: userMsg.id }));
 
-        // Fetch last AI message for DB-side reaction injection + conversation history
         const [historyRaw, lastAIWithReaction] = await Promise.all([
           prisma.message.findMany({
             where: { chatSessionId: session.id },
@@ -149,18 +141,15 @@ export async function sendMessageStream(
 
         const history = historyRaw.reverse();
 
-        // Reaction injection — fetch from DB, clear immediately after reading (fire-once)
         let reactionInject = '';
         if (lastAIWithReaction?.reaction) {
           reactionInject = `[System info: The user reacted with ${lastAIWithReaction.reaction} to your previous message. Let this subtly inform your tone in the next reply — do not announce the reaction, just reflect it naturally.]\n`;
-          // Clear immediately so it never re-injects on refresh
           await prisma.message.update({
             where: { id: lastAIWithReaction.id },
             data: { reaction: null },
           });
         }
 
-        // Grammar weakness summary for system prompt — include error counts for context
         const weaknessSummary = recentWeaknesses
           .filter(w => !w.rule.startsWith('strength:'))
           .length > 0
@@ -180,20 +169,18 @@ export async function sendMessageStream(
           if ((userRecord as any).stealthInjectVocab) {
             const flashcard = await prisma.flashcard.findFirst({
               where: { userId: userRecord.id },
-              orderBy: { nextReview: 'asc' }, // Get one that is due or active
+              orderBy: { nextReview: 'asc' },
             });
             if (flashcard) {
               directives.push(`Use the word '${flashcard.front}' (or its native translation: '${flashcard.back}') naturally.`);
             }
           }
           if ((userRecord as any).stealthInjectGrammar) {
-            // Find an active node (practiced > 0) to challenge them on
             const activeProgresses = await prisma.userSkillProgress.findMany({
               where: { userId: userRecord.id, practiced: { gt: 0 } },
               orderBy: { updatedAt: 'desc' },
-              take: 10
+              take: 10,
             });
-            // Filter for mastery < 15
             const activeSlot = activeProgresses.find(p => p.correct < 15);
             if (activeSlot) {
               stealthGrammarTargetSlug = activeSlot.nodeSlug;
@@ -205,20 +192,17 @@ export async function sendMessageStream(
           }
         }
 
-        // Find last AI stealth target for Synergy
         const lastAIAttempt = await prisma.message.findFirst({
           where: { chatSessionId: session.id, sender: 'AI', stealthTarget: { not: null } },
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: 'desc' },
         });
         const prevStealthTarget = lastAIAttempt?.stealthTarget;
 
-        // ── Short-Video 2.0: Unified Multimodal Context Fetching ──────────────────
-        // Detects TikTok, YouTube Shorts, and Instagram Reels URLs in the message.
+        // ── Short-Video: Unified Multimodal Context Fetching ──────────────────
         let shortVideoContext: ShortVideoContext | null = null;
         const _isShortVideo = !!isTikTok || !!isShortVideo;
 
         if (_isShortVideo) {
-          // Detect which platform from the URL
           const shortsMatch = text.match(
             /https?:\/\/(?:www\.)?(?:youtube\.com\/shorts\/[\w-]+|youtu\.be\/[\w-]+)\S*/i,
           );
@@ -243,16 +227,11 @@ export async function sendMessageStream(
             videoUrl = tiktokMatch[0].split('?')[0];
           }
 
-          // Let the bot actually inspect short-video context before replying, but
-          // keep a firm cap so bad embeds/providers degrade into an honest question.
-          const videoTimeoutPromise = new Promise<ShortVideoContext | null>(
-            resolve => setTimeout(() => resolve(null), 12_000)
-          );
           shortVideoContext = await Promise.race([
             processShortVideo(platform, videoUrl, null).catch(() => null),
-            videoTimeoutPromise,
+            new Promise<null>(resolve => setTimeout(() => resolve(null), 12_000)),
           ]);
-          
+
           enqueue(sseEvent('watching_done', { success: true }));
         }
 
@@ -263,20 +242,24 @@ export async function sendMessageStream(
           userRecord: {
             nativeLanguage: userRecord.nativeLanguage,
             explanationLanguage: userRecord.explanationLanguage,
-            diveDepth: userRecord.diveDepth
+            diveDepth: userRecord.diveDepth,
           },
           reactionInject,
           weaknessSummary,
           memoryContext: stealthDirective,
-          activeQuests: activeQuests.map(uq => ({ id: uq.quest.id, title: uq.quest.title, description: uq.quest.description, progress: uq.progress || 0 })),
+          activeQuests: activeQuests.map(uq => ({
+            id: uq.quest.id,
+            title: uq.quest.title,
+            description: uq.quest.description,
+            progress: uq.progress || 0,
+          })),
           isShortVideo: _isShortVideo,
           shortVideoContext,
-          stealthTargets: { prevStealthTarget }
+          stealthTargets: { prevStealthTarget },
         });
 
         logDev('Actions:Chat', 'Generated response:', { bubbles, parsedMeta });
 
-        // Extract metadata from last bubble parse
         const {
           grammarCorrection = null,
           weaknessIdentified: rawWeakness = null,
@@ -291,15 +274,16 @@ export async function sendMessageStream(
           fluencyScore: rawFluency,
           grammarScore: rawGrammar,
           accuracyScore: rawAccuracy,
-          completedQuestIds = [],
         } = parsedMeta;
 
-        // Ensure completedQuestIds is an array
-        if (parsedMeta.completedQuestIds && !Array.isArray(parsedMeta.completedQuestIds)) {
-          parsedMeta.completedQuestIds = [];
-        }
+        // FIX: extract completedQuestIds AFTER normalising the type, not before.
+        // Doing `const { completedQuestIds = [] } = parsedMeta` before this guard
+        // meant the local variable kept the bad value even after parsedMeta was mutated.
+        const rawCompletedQuestIds = parsedMeta.completedQuestIds;
+        const completedQuestIds: string[] = Array.isArray(rawCompletedQuestIds)
+          ? rawCompletedQuestIds
+          : [];
 
-        // Guard against LLMs returning the literal string "None" instead of JSON null
         const weaknessIdentified =
           rawWeakness && String(rawWeakness).trim().toLowerCase() !== 'none'
             ? rawWeakness
@@ -313,14 +297,10 @@ export async function sendMessageStream(
         const grammarScore = clampScore(rawGrammar);
         const accuracyScore = clampScore(rawAccuracy);
 
-        // Depth calculation
         const now = new Date();
         const withoutEmoji = text.replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, '').trim();
         const realWords = withoutEmoji.split(/\s+/).filter(w => /[a-zA-Z\u0400-\u04FF]/.test(w));
         const isMeaningful = realWords.length >= 2;
-        // Skip grammar ONLY when the message has no real words (pure URL / emoji).
-        // If the user also wrote text (e.g. "just watchs this bro https://...") we
-        // still want to evaluate and highlight their grammar errors.
         const skipGrammar = realWords.length === 0;
 
         const { finalDepth, depthDelta } = calculateDepth(
@@ -328,10 +308,9 @@ export async function sendMessageStream(
           userRecord.lastActiveAt ? new Date(userRecord.lastActiveAt) : null,
           now,
           isMeaningful,
-          levelAdjustment
+          levelAdjustment,
         );
 
-        // Honest CEFR
         const updatedVocab = calculateRollingAverage(userRecord.avgVocabulary, vocabScore);
         const updatedComplexity = calculateRollingAverage(userRecord.avgComplexity, complexityScore);
         const updatedFluency = calculateRollingAverage(userRecord.avgFluency, fluencyScore);
@@ -339,7 +318,9 @@ export async function sendMessageStream(
         const updatedAccuracy = calculateRollingAverage(userRecord.avgAccuracy, accuracyScore);
 
         const totalMsgs = await prisma.message.count({ where: { chatSessionId: session.id, sender: 'AI' } });
-        const totalErrors = await prisma.message.count({ where: { chatSessionId: session.id, sender: 'AI', weaknessIdentified: { not: null } } });
+        const totalErrors = await prisma.message.count({
+          where: { chatSessionId: session.id, sender: 'AI', weaknessIdentified: { not: null } },
+        });
         const errorRate = totalMsgs > 0 ? totalErrors / totalMsgs : 0;
 
         let userLevel: string | null = null;
@@ -347,19 +328,16 @@ export async function sendMessageStream(
           userLevel = calculateCEFRLevel(finalDepth, errorRate, updatedVocab, updatedComplexity, updatedFluency);
         }
 
-        // Streak calculation
         const { newStreak: currentStreak, newLastStreakAt } = calculateStreak(
           userRecord.streak ?? 0,
           userRecord.lastStreakAt ? new Date(userRecord.lastStreakAt) : null,
-          now
+          now,
         );
 
-        // personalBestDepth update
         const newPersonalBestDepth = finalDepth > (userRecord.personalBestDepth ?? 0)
           ? finalDepth
           : (userRecord.personalBestDepth ?? 0);
 
-        // Validate errorSpan
         const rawErrorSpan = errorSpan && typeof errorSpan === 'object'
           && typeof (errorSpan as any).original === 'string'
           && typeof (errorSpan as any).corrected === 'string'
@@ -371,7 +349,6 @@ export async function sendMessageStream(
           ? rawErrorSpan
           : null;
 
-        // Update user message with errorSpan
         if (validErrorSpan) {
           await prisma.message.update({
             where: { id: userMsg.id },
@@ -379,38 +356,30 @@ export async function sendMessageStream(
           });
         }
 
-        // Calculate xpReward so it can be sent to both User and AI messages
         const finalXPReward = weaknessIdentified ? 0 : (
           ((vocabScore && vocabScore >= 75) || (complexityScore && complexityScore >= 75) || strengthIdentified) ? 2 : 1
         );
 
-        // Emit errorSpan and xpReward update for user message
-        enqueue(sseEvent('user_update', { 
-          userMsgId: userMsg.id, 
+        enqueue(sseEvent('user_update', {
+          userMsgId: userMsg.id,
           errorSpan: validErrorSpan,
-          xpReward: finalXPReward
+          xpReward: finalXPReward,
         }));
 
-        // Save each bubble as a separate Message, emit with stagger
+        // Save and emit bubbles
         const savedBubbles: Array<{ id: string; text: string }> = [];
 
         for (let i = 0; i < bubbles.length; i++) {
           const bubbleText = bubbles[i];
           const isLastBubble = i === bubbles.length - 1;
 
-          // Typing indicator before each bubble
           enqueue(sseEvent('typing_indicator', { bubbleIndex: i }));
 
-          // Dynamic delay: simulate typing speed (approx 8ms per char + 300ms base)
-          // Capped at 2200ms to feel responsive on mobile
           const typingDelay = Math.min(2200, Math.max(600, bubbleText.length * 8));
-
           await new Promise(r => setTimeout(r, typingDelay));
 
-          // Randomly make the first bubble a "reply" to the user's message (visual quote)
           const shouldReply = i === 0 && Math.random() < 0.22;
 
-          // Grammar metadata only on the last bubble
           const aiMsg = await prisma.message.create({
             data: {
               text: bubbleText,
@@ -429,7 +398,6 @@ export async function sendMessageStream(
 
           savedBubbles.push({ id: aiMsg.id, text: bubbleText });
 
-          // Emit the bubble
           enqueue(sseEvent('message', {
             id: aiMsg.id,
             text: bubbleText,
@@ -451,13 +419,20 @@ export async function sendMessageStream(
           }));
         }
 
-        // DB updates (async, don't block stream)
+        // ── DB updates ────────────────────────────────────────────────────────
+        const streakMilestone = [3, 7, 14, 30, 60, 100].includes(currentStreak) && !!newLastStreakAt;
+
+        // FIX: removed the duplicate fire-and-forget diveDepth increment that caused
+        // race conditions. All depth math is resolved here and written once.
+        const depthGain = 1 + (weaknessIdentified ? 0 : 2);
+        const baseNewDepth = Math.min(200, finalDepth + (streakMilestone ? depthGain + 50 : depthGain));
+
         const updatePromises: Promise<unknown>[] = [
           prisma.user.update({
             where: { id: userRecord.id },
             data: {
-              diveDepth: finalDepth,
-              maxDiveDepth: finalDepth > (userRecord.maxDiveDepth ?? 0) ? finalDepth : undefined,
+              diveDepth: baseNewDepth,
+              maxDiveDepth: baseNewDepth > (userRecord.maxDiveDepth ?? 0) ? baseNewDepth : undefined,
               personalBestDepth: newPersonalBestDepth,
               streak: currentStreak,
               ...(newLastStreakAt ? { lastStreakAt: newLastStreakAt } : {}),
@@ -471,8 +446,8 @@ export async function sendMessageStream(
           }),
           prisma.message.update({
             where: { id: userMsg.id },
-            data: { metrics: { vocabScore, complexityScore, fluencyScore, grammarScore, accuracyScore } }
-          })
+            data: { metrics: { vocabScore, complexityScore, fluencyScore, grammarScore, accuracyScore } },
+          }),
         ];
 
         if (!skipGrammar && weaknessIdentified) {
@@ -495,18 +470,15 @@ export async function sendMessageStream(
             );
           }
         } else if (!skipGrammar && !weaknessIdentified) {
-          // -- Synergy Bonus or Organic Chat Progression --
           if (prevStealthTarget) {
-            // User successfully avoided errors after a stealth grammar injection!
             updatePromises.push(
               prisma.userSkillProgress.upsert({
                 where: { userId_nodeSlug: { userId: userRecord.id, nodeSlug: prevStealthTarget } },
-                update: { practiced: { increment: 1 }, correct: { increment: 3 } }, // Huge +3 boost
+                update: { practiced: { increment: 1 }, correct: { increment: 3 } },
                 create: { userId: userRecord.id, nodeSlug: prevStealthTarget, practiced: 1, correct: 3 },
               }).catch(err => console.error('Failed to upsert synergy bonus:', err))
             );
           } else {
-            // Organic Progression: give +1 to a random active skill
             const activeNodes = await prisma.userSkillProgress.findMany({
               where: { userId: userRecord.id, practiced: { gt: 0 } },
               take: 50,
@@ -517,7 +489,7 @@ export async function sendMessageStream(
               updatePromises.push(
                 prisma.userSkillProgress.update({
                   where: { userId_nodeSlug: { userId: userRecord.id, nodeSlug: targetNode.nodeSlug } },
-                  data: { correct: { increment: 1 } }, // Passive +1 correct
+                  data: { correct: { increment: 1 } },
                 }).catch(err => console.error('Failed organic progression:', err))
               );
             }
@@ -537,25 +509,15 @@ export async function sendMessageStream(
 
         await Promise.all(updatePromises);
 
-        // Async: Generate a "Bonus Bounty" quest if a weakness was identified
         if (!skipGrammar && weaknessIdentified) {
           generateBonusQuest(userRecord.id, String(weaknessIdentified)).catch(err =>
             console.error('[chat] Background quest generation failed:', err)
           );
         }
 
-        // Depth awards — base 1 per message, +2 bonus for clean, +50 for streak milestone.
-        // Fire-and-forget so depth never blocks the stream.
-        const depthGain = 1 + (weaknessIdentified ? 0 : 2);
-        const streakMilestone = [3, 7, 14, 30, 60, 100].includes(currentStreak) && newLastStreakAt;
-        prisma.user.update({
-          where: { id: userRecord.id },
-          data: { diveDepth: { increment: streakMilestone ? depthGain + 50 : depthGain } },
-        }).catch(err => console.error('[chat] Depth update failed:', err));
-
         // Process LLM-returned quest completions
         let questCompletions: Array<{ title: string; depthReward: number }> = [];
-        if (completedQuestIds && Array.isArray(completedQuestIds) && completedQuestIds.length > 0) {
+        if (completedQuestIds.length > 0) {
           for (const questId of completedQuestIds) {
             const activeUq = activeQuests.find(uq => uq.quest.id === questId);
             if (activeUq && !activeUq.completed) {
@@ -569,16 +531,14 @@ export async function sendMessageStream(
           }
         }
 
-        // Server-side: Auto-increment progress for message-count quests
+        // Server-side: auto-increment progress for message-count quests
         for (const uq of activeQuests) {
           if (uq.completed) continue;
           const desc = uq.quest.description.toLowerCase();
-          // Check if this is a message-count quest
           if (desc.includes('send') && (desc.includes('message') || desc.includes('messages'))) {
             const numMatch = uq.quest.description.match(/\b(\d+)\b/);
             if (numMatch) {
               const target = parseInt(numMatch[1], 10);
-              // Re-fetch the latest progress from DB to avoid using stale in-memory value
               const freshUq = await prisma.userQuest.findUnique({
                 where: { id: uq.id },
                 select: { progress: true, completed: true },
@@ -602,7 +562,6 @@ export async function sendMessageStream(
           }
         }
 
-        // Quest check (server-side fallback for message-count quests)
         const recentAIMsgs = await prisma.message.findMany({
           where: { chatSessionId: session.id, sender: 'AI' },
           orderBy: { createdAt: 'desc' },
@@ -625,17 +584,13 @@ export async function sendMessageStream(
           complexityScore,
         });
 
-        // Combine LLM completions with server-side completions
         const allQuestCompletions = [...questCompletions];
-        if (questCompleted) {
-          allQuestCompletions.push(questCompleted);
-        }
+        if (questCompleted) allQuestCompletions.push(questCompleted);
 
-        // Calculate total depth reward from all completions
         const totalDepthReward = allQuestCompletions.reduce((sum, q) => sum + q.depthReward, 0);
         const questFinalDepth = totalDepthReward > 0
-          ? Math.min(200, finalDepth + totalDepthReward)
-          : finalDepth;
+          ? Math.min(200, baseNewDepth + totalDepthReward)
+          : baseNewDepth;
 
         if (totalDepthReward > 0) {
           await prisma.user.update({
@@ -644,19 +599,16 @@ export async function sendMessageStream(
           });
         }
 
-        // Task 7: Skill tree update every 5 messages
+        // Skill tree update every 5 messages
         const sessionMsgCountForSkill = await prisma.message.count({
           where: { chatSessionId: session.id, sender: 'USER' },
         });
         if (sessionMsgCountForSkill > 0 && sessionMsgCountForSkill % 5 === 0) {
-          // Boost practiced skill progress proportional to quality
           const qualityScore = Math.round(
             ((vocabScore ?? 60) + (grammarScore ?? 60) + (fluencyScore ?? 60)) / 3
           );
-          // delta: 1-15 based on quality (1=low, 15=high)
           const delta = Math.max(1, Math.min(15, Math.round((qualityScore / 100) * 15)));
 
-          // Get user's active skill nodes and increment correct count
           const activeSkillNodes = await prisma.userSkillProgress.findMany({
             where: { userId: userRecord.id, practiced: { gt: 0 } },
             take: 10,
@@ -674,11 +626,9 @@ export async function sendMessageStream(
             );
           }
 
-          // Emit skill-tree-updated event so client can refresh
           enqueue(sseEvent('skill_tree_updated', { delta, sessionMsgCount: sessionMsgCountForSkill }));
         }
 
-        // Final stats event
         enqueue(sseEvent('stats', {
           depthDelta,
           currentDepth: questFinalDepth,
@@ -686,7 +636,7 @@ export async function sendMessageStream(
           strengthIdentified: strengthIdentified ?? null,
           userLevel: userLevel ?? null,
           newPersonalBest: newPersonalBestDepth > (userRecord.personalBestDepth ?? 0),
-          streakMilestone: [3, 7, 14, 30, 60, 100].includes(currentStreak) && newLastStreakAt ? currentStreak : null,
+          streakMilestone: streakMilestone ? currentStreak : null,
         }));
 
         enqueue(sseEvent('done', { success: true }));
@@ -702,6 +652,3 @@ export async function sendMessageStream(
 
   return stream;
 }
-
-// Legacy non-streaming sendMessage was removed — all chat uses sendMessageStream SSE now.
-
