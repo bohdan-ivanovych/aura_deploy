@@ -227,10 +227,22 @@ export async function sendMessageStream(
             videoUrl = tiktokMatch[0].split('?')[0];
           }
 
-          shortVideoContext = await Promise.race([
-            processShortVideo(platform, videoUrl, null).catch(() => null),
-            new Promise<null>(resolve => setTimeout(() => resolve(null), 12_000)),
-          ]);
+          let isDone = false;
+          const pingInterval = setInterval(() => {
+            if (!isDone) {
+              enqueue(sseEvent('ping', {}));
+            }
+          }, 2000);
+
+          try {
+            shortVideoContext = await Promise.race([
+              processShortVideo(platform, videoUrl, null).catch(() => null),
+              new Promise<null>(resolve => setTimeout(() => resolve(null), 12_000)),
+            ]);
+          } finally {
+            isDone = true;
+            clearInterval(pingInterval);
+          }
 
           enqueue(sseEvent('watching_done', { success: true }));
         }

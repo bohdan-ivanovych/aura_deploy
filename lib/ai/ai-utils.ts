@@ -68,7 +68,11 @@ export function validateAIResponse(response: any): any {
   }
   
   if (typeof grammar === 'string') {
-    const lower = grammar.toLowerCase().trim();
+    grammar = grammar.trim();
+    while (/\s*\[[^\]]*\]\s*$/.test(grammar)) {
+      grammar = grammar.replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+    }
+    const lower = grammar.toLowerCase();
     if (lower.startsWith('none') || lower.startsWith('no error') || lower.startsWith('no grammar') || lower.startsWith('no correction')) {
       grammar = null;
     }

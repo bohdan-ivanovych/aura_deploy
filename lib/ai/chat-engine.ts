@@ -326,5 +326,13 @@ React to the CONTENT AND TOPIC of this multimodal data as your persona. Be emoti
     parsedMeta.vocabularyNote = (parsedMeta.vocabularyNote as unknown as string[])[0] ?? null;
   }
 
+  // Programmatically clean up trailing bracketed text in grammar correction notes
+  if (typeof parsedMeta.grammarCorrection === 'string') {
+    parsedMeta.grammarCorrection = parsedMeta.grammarCorrection.trim();
+    while (/\s*\[[^\]]*\]\s*$/.test(parsedMeta.grammarCorrection)) {
+      parsedMeta.grammarCorrection = parsedMeta.grammarCorrection.replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+    }
+  }
+
   return { bubbles, parsedMeta };
 }

@@ -10,6 +10,8 @@ const envSchema = z.object({
   // Additional Groq keys for fallback rotation (optional)
   GROQ_API_KEY_2: z.string().optional().default(''),
   GROQ_API_KEY_3: z.string().optional().default(''),
+  // Comma-separated list of Groq API keys (optional)
+  GROQ_API_KEYS: z.string().optional().default(''),
   // Groq model to use
   GROQ_MODEL: z.string().optional().default('llama-3.3-70b-versatile'),
   // Gemini fallback — Tier 3 (OpenAI-compatible)
@@ -34,6 +36,7 @@ function parseEnv() {
     GROQ_API_KEY: process.env.GROQ_API_KEY,
     GROQ_API_KEY_2: process.env.GROQ_API_KEY_2,
     GROQ_API_KEY_3: process.env.GROQ_API_KEY_3,
+    GROQ_API_KEYS: process.env.GROQ_API_KEYS,
     GROQ_MODEL: process.env.GROQ_MODEL,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_MODEL: process.env.GEMINI_MODEL,

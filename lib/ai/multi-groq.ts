@@ -22,6 +22,7 @@
 
 import Groq from 'groq-sdk';
 import { env } from '../env';
+import { getGroqApiKeys } from './groq';
 import { callCerebras } from './providers/cerebras';
 import { callGemini } from './providers/gemini';
 import {
@@ -127,10 +128,7 @@ interface KeyEntry {
 }
 
 function buildKeyPool(): KeyEntry[] {
-  const keys = [env.GROQ_API_KEY, env.GROQ_API_KEY_2, env.GROQ_API_KEY_3]
-    .filter(Boolean)
-    .filter((k, i, arr) => arr.indexOf(k) === i); // deduplicate
-
+  const keys = getGroqApiKeys();
   return keys.map(key => ({ key, cb: makeCB() }));
 }
 
