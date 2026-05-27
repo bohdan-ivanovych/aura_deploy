@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getGroqClient } from '@/lib/ai/groq';
+import { env } from '@/lib/env';
 import { getOrCreateUser } from '@/lib/auth/api-utils';
 import { getVoicesByAccent, getVoiceById, VoiceEntry } from '@/config/voices';
 
@@ -32,7 +33,7 @@ Respond with ONLY a single JSON object — no markdown, no explanation:
 {"voiceId": "<chosen voice id>"}`;
 
   const completion = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
+    model: env.GROQ_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Persona name: "${name}"\nDescription: "${description || ''}"` },

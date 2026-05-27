@@ -4,6 +4,7 @@ import { rateLimit } from '@/lib/utils/rate-limit';
 import { getGroqClient } from '@/lib/ai/groq';
 import { GRAMMAR_NODES, normalizeSkillTopic, titleFromSkillTopic } from '@/lib/game/grammar-nodes';
 import { getTheory } from '@/lib/game/skill-theory';
+import { env } from '@/lib/env';
 
 type QuizQuestion = {
   question: string;
@@ -131,7 +132,7 @@ Each object must have this exact structure:
 "correct" is the index (0-3) of the correct option.`;
 
     const completion = await withTimeout(groq.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model: env.GROQ_MODEL,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2500,
       temperature: 0.7,
