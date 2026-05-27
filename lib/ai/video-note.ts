@@ -7,7 +7,7 @@
  * Called by /api/tiktok-note, /api/shorts-note, /api/reels-note.
  */
 
-import { getGroqClient, GROQ_MODEL } from '@/lib/ai/groq';
+import { makeAICompletion } from '@/lib/ai/multi-groq';
 import type { ShortVideoContext, ShortVideoPlatform } from './video-processor';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -97,23 +97,17 @@ Return ONLY valid JSON, no markdown:
   };
 
   try {
-    const groq = getGroqClient();
-    const completion = await Promise.race([
-      groq.chat.completions.create({
-        model: GROQ_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.6,
-        max_tokens: 512,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Video note generation timed out')), 12_000),
-      ),
-    ]);
+    const raw = await makeAICompletion({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.6,
+      maxTokens: 512,
+      responseFormat: { type: 'json_object' },
+      timeoutMs: 12_000,
+    });
 
-    const raw = completion.choices[0]?.message?.content?.trim() || '';
     const cleaned = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
     const parsed = JSON.parse(cleaned);
 
