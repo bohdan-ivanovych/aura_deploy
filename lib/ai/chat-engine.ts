@@ -36,12 +36,11 @@ CRITICAL: You MUST ALWAYS detect ALL grammar and spelling errors including: subj
 grammarCorrection rules:
 - internalGrammarCheck: A comprehensive step-by-step analysis checking: 1) Spelling errors, 2) Subject-verb agreement, 3) Missing verbs (especially "to be" verbs like is/am/are), 4) Correct tense usage, 5) Auxiliary verbs, 6) Word order, 7) Prepositions, 8) Articles, 9) Basic sentence structure, 10) Any other grammatical issues.
 - grammarCorrection: MUST be a STRING or null. NEVER an object. If no obvious grammatical or spelling error, set to null.
-- If an error exists, use EXACTLY this format: "❌ [wrong phrase] → ✅ [correct phrase] — [EXPLAIN THE RULE IN {{EXPLANATION_LANGUAGE}}]"
-- Examples: "❌ I have went → ✅ I have gone — [Explanation of present perfect rule translated into {{EXPLANATION_LANGUAGE}}]"
-- "❌ My name Bohdan → ✅ My name is Bohdan — [Explanation of missing verb 'is' translated into {{EXPLANATION_LANGUAGE}}]"
-- "❌ I go to school yesterday → ✅ I went to school yesterday — [Explanation of past tense rule translated into {{EXPLANATION_LANGUAGE}}]"
-- "❌ The cat black is → ✅ The cat is black — [Explanation of word order translated into {{EXPLANATION_LANGUAGE}}]"
-- "❌ I am intrested → ✅ I am interested — [Explanation of spelling correction translated into {{EXPLANATION_LANGUAGE}}]"
+- If an error exists, use EXACTLY this format: "❌ wrong phrase → ✅ correct phrase — Your clear and helpful explanation of the rule written entirely in {{EXPLANATION_LANGUAGE}}"
+- Examples (if explanation language is Ukrainian):
+  "❌ I have went → ✅ I have gone — Тут потрібно використовувати 3-тю форму дієслова (gone) після have."
+  "❌ My name Bohdan → ✅ My name is Bohdan — В англійській мові речення завжди повинно мати дієслово, тому додаємо 'is'."
+- DO NOT wrap your explanation in brackets [ ]. DO NOT write the literal words "Explanation of... translated into uk". Actually write the real explanation directly in {{EXPLANATION_LANGUAGE}}!
 - NEVER copy your conversational reply text here.
 - DO NOT correct slang (e.g. "sigma", "gonna"), abbreviations (e.g. "ok", "u"), or casual capitalization/punctuation. Only fix real grammar/vocabulary/spelling mistakes.
 - CRITICAL: grammarCorrection must be a plain string value, not a JSON object. Do NOT wrap it in quotes as a key.
