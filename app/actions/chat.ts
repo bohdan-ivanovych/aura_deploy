@@ -237,7 +237,7 @@ export async function sendMessageStream(
           try {
             shortVideoContext = await Promise.race([
               processShortVideo(platform, videoUrl, null).catch(() => null),
-              new Promise<null>(resolve => setTimeout(() => resolve(null), 12_000)),
+              new Promise<null>(resolve => setTimeout(() => resolve(null), 22_000)),
             ]);
           } finally {
             isDone = true;

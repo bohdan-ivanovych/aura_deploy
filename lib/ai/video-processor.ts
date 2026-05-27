@@ -52,7 +52,7 @@ interface PlatformMeta {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_VIDEO_SIZE = 15 * 1024 * 1024; // 15 MB
 const MEDIA_DOWNLOAD_TIMEOUT_MS = 12_000;
-const METADATA_TIMEOUT_MS = 7_000;
+const METADATA_TIMEOUT_MS = 4_000;
 const TRANSCRIPTION_TIMEOUT_MS = 12_000;
 const VISION_TIMEOUT_MS = 8_000;
 
@@ -247,89 +247,97 @@ async function runTranscriptionPipeline(
   meta: PlatformMeta,
   result: ShortVideoContext,
 ): Promise<void> {
-  // ── Step 1: Whisper transcription ──────────────────────────────────────────
-  if (!result.transcription && meta.playUrl && (!meta.fileSizeBytes || meta.fileSizeBytes <= MAX_VIDEO_SIZE)) {
-    const controller = new AbortController();
-    // FIX: use let so we can clearTimeout in finally
-    let timeout: ReturnType<typeof setTimeout> | null = setTimeout(
-      () => controller.abort(),
-      MEDIA_DOWNLOAD_TIMEOUT_MS,
-    );
+  const tasks: Promise<void>[] = [];
+  const playUrl = meta.playUrl;
+  const coverUrl = meta.coverUrl;
 
-    try {
-      const videoRes = await fetch(meta.playUrl, { signal: controller.signal });
-      if (!videoRes.ok) throw new Error(`Video fetch failed: ${videoRes.status}`);
-
-      const arrayBuffer = await videoRes.arrayBuffer();
-
-      if (arrayBuffer.byteLength > 0 && arrayBuffer.byteLength <= MAX_VIDEO_SIZE) {
-        const groqFile = new File([arrayBuffer], 'video.mp4', { type: 'video/mp4' });
-        const groq = getGroqClient();
-        const transcription = await withTimeout(
-          groq.audio.transcriptions.create({
-            file: groqFile,
-            model: 'whisper-large-v3-turbo',
-            response_format: 'json',
-            temperature: 0.0,
-          }),
-          TRANSCRIPTION_TIMEOUT_MS,
-          'Whisper transcription',
-        );
-
-        if (transcription.text?.trim().length > 0) {
-          result.transcription = transcription.text.trim();
-          console.log(
-            `[VideoProcessor:${result.platform}] Whisper extracted (${transcription.text.length} chars)`,
-          );
-        } else {
-          console.log(`[VideoProcessor:${result.platform}] Whisper returned empty text.`);
-        }
-      }
-    } catch (err) {
-      console.warn(`[VideoProcessor:${result.platform}] Whisper failed:`, err);
-    } finally {
-      // FIX: always clear the abort timeout to avoid dangling timers
-      if (timeout !== null) {
-        clearTimeout(timeout);
-        timeout = null;
-      }
-    }
-  }
-
-  // ── Step 2: Vision analysis on cover image ─────────────────────────────────
-  if (meta.coverUrl) {
-    try {
-      const { text } = await withTimeout(
-        generateText({
-          model: googleProvider('gemini-3.1-flash-lite'),
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: 'You are an AI analyzing a short-form video thumbnail/cover image. Describe exactly what is happening in the scene, any people visible, their expressions and emotions, any objects, the setting, and carefully extract ANY text visible on screen (OCR). Keep it concise but highly descriptive. Max 3 sentences.',
-                },
-                { type: 'image', image: new URL(meta.coverUrl) },
-              ],
-            },
-          ],
-          temperature: 0.4,
-        }),
-        VISION_TIMEOUT_MS,
-        'Thumbnail vision',
+  // ── Step 1: Whisper transcription task ──────────────────────────────────────
+  if (!result.transcription && playUrl && (!meta.fileSizeBytes || meta.fileSizeBytes <= MAX_VIDEO_SIZE)) {
+    tasks.push((async () => {
+      const controller = new AbortController();
+      let timeout: ReturnType<typeof setTimeout> | null = setTimeout(
+        () => controller.abort(),
+        MEDIA_DOWNLOAD_TIMEOUT_MS,
       );
 
-      if (text?.trim()) {
-        result.visionAnalysis = text.trim();
-        console.log(
-          `[VideoProcessor:${result.platform}] Vision extracted (${text.length} chars)`,
-        );
+      try {
+        const videoRes = await fetch(playUrl, { signal: controller.signal });
+        if (!videoRes.ok) throw new Error(`Video fetch failed: ${videoRes.status}`);
+
+        const arrayBuffer = await videoRes.arrayBuffer();
+
+        if (arrayBuffer.byteLength > 0 && arrayBuffer.byteLength <= MAX_VIDEO_SIZE) {
+          const groqFile = new File([arrayBuffer], 'video.mp4', { type: 'video/mp4' });
+          const groq = getGroqClient();
+          const transcription = await withTimeout(
+            groq.audio.transcriptions.create({
+              file: groqFile,
+              model: 'whisper-large-v3-turbo',
+              response_format: 'json',
+              temperature: 0.0,
+            }),
+            TRANSCRIPTION_TIMEOUT_MS,
+            'Whisper transcription',
+          );
+
+          if (transcription.text?.trim().length > 0) {
+            result.transcription = transcription.text.trim();
+            console.log(
+              `[VideoProcessor:${result.platform}] Whisper extracted (${transcription.text.length} chars)`,
+            );
+          } else {
+            console.log(`[VideoProcessor:${result.platform}] Whisper returned empty text.`);
+          }
+        }
+      } catch (err) {
+        console.warn(`[VideoProcessor:${result.platform}] Whisper failed:`, err);
+      } finally {
+        if (timeout !== null) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
       }
-    } catch (err) {
-      console.warn(`[VideoProcessor:${result.platform}] Vision failed:`, err);
-    }
+    })());
   }
+
+  // ── Step 2: Vision analysis task ───────────────────────────────────────────
+  if (coverUrl) {
+    tasks.push((async () => {
+      try {
+        const { text } = await withTimeout(
+          generateText({
+            model: googleProvider('gemini-3.1-flash-lite'),
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'You are an AI analyzing a short-form video thumbnail/cover image. Describe exactly what is happening in the scene, any people visible, their expressions and emotions, any objects, the setting, and carefully extract ANY text visible on screen (OCR). Keep it concise but highly descriptive. Max 3 sentences.',
+                  },
+                  { type: 'image', image: new URL(coverUrl) },
+                ],
+              },
+            ],
+            temperature: 0.4,
+          }),
+          VISION_TIMEOUT_MS,
+          'Thumbnail vision',
+        );
+
+        if (text?.trim()) {
+          result.visionAnalysis = text.trim();
+          console.log(
+            `[VideoProcessor:${result.platform}] Vision extracted (${text.length} chars)`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[VideoProcessor:${result.platform}] Vision failed:`, err);
+      }
+    })());
+  }
+
+  await Promise.allSettled(tasks);
 
   if (!result.transcription && !result.visionAnalysis) {
     console.warn(
