@@ -193,6 +193,15 @@ async function fetchTikTokMeta(url: string): Promise<PlatformMeta> {
  * Whisper is a fallback only if transcript is unavailable.
  */
 async function fetchShortsMeta(url: string, fallbackTitle: string | null): Promise<PlatformMeta> {
+  const cobaltMeta = await fetchMetaViaCobalt(url);
+  if (cobaltMeta?.playUrl) {
+    return {
+      title: cobaltMeta.title ?? fallbackTitle,
+      authorName: null,
+      playUrl: cobaltMeta.playUrl,
+      coverUrl: cobaltMeta.coverUrl,
+    };
+  }
   return {
     title: fallbackTitle,
     authorName: null,
@@ -239,7 +248,7 @@ async function runTranscriptionPipeline(
   result: ShortVideoContext,
 ): Promise<void> {
   // ── Step 1: Whisper transcription ──────────────────────────────────────────
-  if (meta.playUrl && (!meta.fileSizeBytes || meta.fileSizeBytes <= MAX_VIDEO_SIZE)) {
+  if (!result.transcription && meta.playUrl && (!meta.fileSizeBytes || meta.fileSizeBytes <= MAX_VIDEO_SIZE)) {
     const controller = new AbortController();
     // FIX: use let so we can clearTimeout in finally
     let timeout: ReturnType<typeof setTimeout> | null = setTimeout(
