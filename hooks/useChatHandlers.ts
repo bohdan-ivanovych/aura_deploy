@@ -370,10 +370,15 @@ export function useChatHandlers() {
 
           const parsed = parseSSEChunk(block + '\n\n');
           for (const { event, data } of parsed) {
+            let payload: any;
             try {
-              const payload = JSON.parse(data);
+              payload = JSON.parse(data);
+            } catch (parseErr) {
+              if (event === 'error') throw new Error('Stream error');
+              continue;
+            }
 
-              if (event === 'session') {
+            if (event === 'session') {
                 realUserMsgId = payload.userMsgId;
                 if (realUserMsgId) {
                   const msgs: any[] = getSession()?.messages || [];
@@ -581,9 +586,6 @@ export function useChatHandlers() {
                   }).catch(() => { });
                 }
               }
-            } catch (parseErr) {
-              if (event === 'error') throw new Error('Stream error');
-            }
           }
         }
       }
