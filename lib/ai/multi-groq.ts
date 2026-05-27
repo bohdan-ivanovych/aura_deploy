@@ -71,7 +71,6 @@ function makeCB(): CircuitBreaker {
 
 // One CB per provider tier (module-level singletons — survive across requests)
 const cbCerebras = makeCB();
-const cbGroq = makeCB();
 const cbGemini = makeCB();
 
 function pruneFW(cb: CircuitBreaker): void {
@@ -155,10 +154,6 @@ function getNextAvailableKey(): KeyEntry | null {
   return null;
 }
 
-function allGroqKeysDown(): boolean {
-  return keyPool.every(e => !canAttempt(e.cb));
-}
-
 // ─── Retryable error detection ────────────────────────────────────────────────
 
 function isRetryable(err: Error): boolean {
@@ -239,45 +234,37 @@ export async function makeAICompletion(opts: CompletionOptions): Promise<string>
   }
 
   // ── Tier 2: Groq keys ──────────────────────────────────────────────────────
-  if (canAttempt(cbGroq)) {
-    for (let attempt = 0; attempt < keyPool.length; attempt++) {
-      const entry = getNextAvailableKey();
-      if (!entry) break;
+  for (let attempt = 0; attempt < keyPool.length; attempt++) {
+    const entry = getNextAvailableKey();
+    if (!entry) break;
 
-      try {
-        const client = getClient(entry.key);
-        const completion = await Promise.race([
-          client.chat.completions.create({
-            model,
-            messages,
-            temperature,
-            max_tokens: maxTokens,
-            top_p: 0.95,
-            stream: false,
-            ...(responseFormat ? { response_format: responseFormat } : {}),
-          } as Parameters<typeof client.chat.completions.create>[0]),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Groq request timed out')), timeoutMs)
-          ),
-        ]);
+    try {
+      const client = getClient(entry.key);
+      const completion = await Promise.race([
+        client.chat.completions.create({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+          top_p: 0.95,
+          stream: false,
+          ...(responseFormat ? { response_format: responseFormat } : {}),
+        } as Parameters<typeof client.chat.completions.create>[0]),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Groq request timed out')), timeoutMs)
+        ),
+      ]);
 
-        const groqContent = (completion as any).choices[0]?.message?.content ?? '';
-        if (isDegenerateResponse(groqContent)) {
-          throw new Error(`Groq returned degenerate response: ${groqContent.slice(0, 80)}`);
-        }
-        recordSuccess(entry.cb);
-        recordSuccess(cbGroq);
-        return groqContent;
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        if (isRetryable(lastError) || lastError.message.includes('degenerate')) {
-          recordFailure(entry.cb);
-          if (allGroqKeysDown()) recordFailure(cbGroq);
-        } else {
-          // If it's a JSON mode error or similar, we might still want to waterfall
-          console.warn('[circuit-breaker] Groq non-retryable error:', lastError.message);
-        }
+      const groqContent = (completion as any).choices[0]?.message?.content ?? '';
+      if (isDegenerateResponse(groqContent)) {
+        throw new Error(`Groq returned degenerate response: ${groqContent.slice(0, 80)}`);
       }
+      recordSuccess(entry.cb);
+      return groqContent;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[circuit-breaker] Groq key attempt failed:`, lastError.message);
+      recordFailure(entry.cb);
     }
   }
 
@@ -414,52 +401,44 @@ export async function* makeAIStream(
   }
 
   // ── Tier 2: Groq streaming ────────────────────────────────────────────────
-  if (canAttempt(cbGroq)) {
+  for (let attempt = 0; attempt < keyPool.length; attempt++) {
     const entry = getNextAvailableKey();
-    if (entry) {
-      try {
-        yield { type: 'provider', name: 'groq' };
+    if (!entry) break;
 
-        const client = getClient(entry.key);
-        const streamAbort = new AbortController();
-        const timer = setTimeout(() => streamAbort.abort(), timeoutMs);
+    try {
+      yield { type: 'provider', name: 'groq' };
 
-        const groqStream = await client.chat.completions.create({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-          top_p: 0.95,
-          stream: true,
-          ...(responseFormat ? { response_format: responseFormat } : {}),
-        } as any);
+      const client = getClient(entry.key);
+      const streamAbort = new AbortController();
+      const timer = setTimeout(() => streamAbort.abort(), timeoutMs);
 
-        let fullText = '';
-        for await (const chunk of (groqStream as any)) {
-          const token = (chunk as any).choices?.[0]?.delta?.content ?? '';
-          if (token) {
-            fullText += token;
-            yield { type: 'token', text: token };
-          }
-        }
-        clearTimeout(timer);
+      const groqStream = await client.chat.completions.create({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        top_p: 0.95,
+        stream: true,
+        ...(responseFormat ? { response_format: responseFormat } : {}),
+      } as any);
 
-        recordSuccess(entry.cb);
-        recordSuccess(cbGroq);
-        yield { type: 'done', fullText };
-        return;
-      } catch (err) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        console.warn('[circuit-breaker] Groq stream failed:', error.message);
-        if (isRetryable(error)) {
-          recordFailure(entry.cb);
-          if (allGroqKeysDown()) recordFailure(cbGroq);
-        } else {
-          // non-retryable error, yield it and stop
-          yield { type: 'error', error: error.message };
-          return;
+      let fullText = '';
+      for await (const chunk of (groqStream as any)) {
+        const token = (chunk as any).choices?.[0]?.delta?.content ?? '';
+        if (token) {
+          fullText += token;
+          yield { type: 'token', text: token };
         }
       }
+      clearTimeout(timer);
+
+      recordSuccess(entry.cb);
+      yield { type: 'done', fullText };
+      return;
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.warn('[circuit-breaker] Groq stream key attempt failed:', error.message);
+      recordFailure(entry.cb);
     }
   }
 
@@ -510,11 +489,9 @@ export function getCircuitBreakerStatus() {
       openUntil: cbCerebras.openUntil,
     },
     groq: {
-      state: cbGroq.state,
-      failures: cbGroq.failures,
-      openUntil: cbGroq.openUntil,
+      state: keyPool.every(e => e.cb.state === 'OPEN') ? 'OPEN' : 'CLOSED',
       keys: keyPool.map(e => ({
-        keyHint: `...${e.key.slice(-6)}`,
+        keyHint: e.key ? `...${e.key.slice(-6)}` : 'missing',
         state: e.cb.state,
         failures: e.cb.failures,
       })),
