@@ -142,6 +142,12 @@ export default function ChatClient({ initialSessions = [] }: ChatClientProps) {
   const [isWatching, setIsWatching] = useState(false);
   const { triggerInstallIfEligible } = usePWAInstall();
 
+  useEffect(() => {
+    const onWatchingDone = () => setIsWatching(false);
+    window.addEventListener('chat-watching-done', onWatchingDone);
+    return () => window.removeEventListener('chat-watching-done', onWatchingDone);
+  }, []);
+
   // Task 10: promotional period — suppress all limit UI client-side
   const isUnlimitedPeriod = new Date() < new Date('2026-06-01T00:00:00Z');
 

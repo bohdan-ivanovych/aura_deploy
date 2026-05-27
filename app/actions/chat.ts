@@ -252,6 +252,8 @@ export async function sendMessageStream(
             processShortVideo(platform, videoUrl, null).catch(() => null),
             videoTimeoutPromise,
           ]);
+          
+          enqueue(sseEvent('watching_done', { success: true }));
         }
 
         const { bubbles, parsedMeta } = await generateChatResponse({

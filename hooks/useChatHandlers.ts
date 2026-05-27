@@ -514,6 +514,10 @@ export function useChatHandlers() {
                 }
               }
 
+              if (event === 'watching_done') {
+                window.dispatchEvent(new Event('chat-watching-done'));
+              }
+
               if (event === 'error') {
                 throw new Error(payload.error || 'Stream error');
               }
